@@ -208,7 +208,7 @@ static esp_err_t root_get(httpd_req_t *r) {
 
     snprintf(buf, sizeof(buf), "%u", (unsigned)c->mqtt_port);
     send_str(r, "<fieldset><legend>MQTT (пустой адрес = отключено)</legend>");
-    fld(r, "Адрес брокера", "mhost", "text", c->mqtt_host, "maxlength='63' placeholder='192.168.254.60'");
+    fld(r, "Адрес брокера", "mhost", "text", c->mqtt_host, "maxlength='63' placeholder='192.168.10.1'");
     fld(r, "Порт (по умолчанию 1883)", "mport", "number", buf, "min='1' max='65535'");
     fld(r, "Логин", "muser", "text", c->mqtt_user, "maxlength='31'");
     fld_pw(r, "Пароль (пусто = не менять, '-' = очистить)", "mpass",
