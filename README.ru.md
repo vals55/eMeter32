@@ -197,7 +197,7 @@ eMeter32/
 ### Сборка и прошивка
 
 ```bash
-git clone https://github.com/<your-user>/eMeter32.git
+git clone https://github.com/vals55/eMeter32.git
 cd eMeter32
 
 # сборка
