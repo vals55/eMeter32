@@ -1,4 +1,4 @@
-<div align="center">
+﻿<div align="center">
 
 # ⚡ eMeter32
 
@@ -62,7 +62,7 @@ What it does:
 
 ### Pinout
 
-All pin assignments are in one file: [`board_config.h`](eMeter32/components/board_config/include/board_config.h).
+All pin assignments are in one file: [`board_config.h`](components/board_config/include/board_config.h).
 
 | Signal | GPIO | Note |
 |---|---|---|
@@ -278,7 +278,7 @@ The device is updated from a browser. The update server is **not running all the
 - Only an application image from the same project is accepted, and the file is checked before and after writing.
 - Flash is split into two slots (`ota_0` and `ota_1`) plus an `otadata` partition. If the new version does not reach a working state (before connecting to Wi-Fi), the bootloader returns to the previous one.
 
-The 4 MB flash map is described in [`partitions.csv`](eMeter32/partitions.csv).
+The 4 MB flash map is described in [`partitions.csv`](partitions.csv).
 
 ## 📡 Statistics push
 
@@ -323,3 +323,4 @@ Suggestions and bug reports are welcome: open an [issue](../../issues) or send a
 This project is licensed under the **MIT** license. See the [`LICENSE`](LICENSE) file for details.
 
 © 2026 vals. Vals home Lab.
+

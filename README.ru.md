@@ -1,4 +1,4 @@
-<div align="center">
+﻿<div align="center">
 
 # ⚡ eMeter32
 
@@ -62,7 +62,7 @@
 
 ### Распиновка
 
-Все назначения выводов собраны в одном файле: [`board_config.h`](eMeter32/components/board_config/include/board_config.h).
+Все назначения выводов собраны в одном файле: [`board_config.h`](components/board_config/include/board_config.h).
 
 | Сигнал | GPIO | Примечание |
 |---|---|---|
@@ -278,7 +278,7 @@ pio run -e release -t upload
 - Принимается только образ приложения этого же проекта, файл проверяется до записи и после.
 - Flash разбит на два слота (`ota_0` и `ota_1`) и раздел `otadata`. Если новая версия не дошла до рабочего состояния (до подключения к Wi-Fi), загрузчик вернёт предыдущую.
 
-Карта flash (4 МБ) описана в [`partitions.csv`](eMeter32/partitions.csv).
+Карта flash (4 МБ) описана в [`partitions.csv`](partitions.csv).
 
 ## 📡 Отправка статистики
 
@@ -323,3 +323,4 @@ pio run -e release -t upload
 Проект распространяется под лицензией **MIT**. Подробности смотрите в файле [`LICENSE`](LICENSE).
 
 © 2026 vals. Vals home Lab.
+
