@@ -1,0 +1,249 @@
+01:34:25.385 > ets Jul 29 2019 12:21:46
+01:34:25.386 > 
+01:34:25.386 > rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+01:34:25.391 > configsip: 0, SPIWP:0xee
+01:34:25.391 > clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+01:34:25.396 > mode:DIO, clock div:2
+01:34:25.403 > load:0x3fff0030,len:6280
+01:34:25.403 > load:0x40078000,len:15864
+01:34:25.407 > load:0x40080400,len:3920
+01:34:25.407 > entry 0x4008063c
+01:34:25.414 > I (27) boot: ESP-IDF 5.5.3 2nd stage bootloader
+01:34:25.415 > I (27) boot: compile time Oct 10 2026 01:28:58
+01:34:25.419 > I (27) boot: Multicore bootloader
+01:34:25.425 > I (29) boot: chip revision: v3.1
+01:34:25.425 > I (31) boot.esp32: SPI Speed      : 40MHz
+01:34:25.430 > I (35) boot.esp32: SPI Mode       : DIO
+01:34:25.430 > I (39) boot.esp32: SPI Flash Size : 4MB
+01:34:25.436 > I (42) boot: Enabling RNG early entropy source...
+01:34:25.442 > I (47) boot: Partition Table:
+01:34:25.442 > I (49) boot: ## Label            Usage          Type ST Offset   Length
+01:34:25.447 > I (56) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+01:34:25.459 > I (62) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+01:34:25.472 > I (69) boot:  2 factory          factory app      00 00 00010000 00100000
+01:34:25.472 > I (75) boot: End of partition table
+01:34:25.478 > I (79) esp_image: segment 0: paddr=00010020 vaddr=3f400020 size=1cae4h (117476) map
+01:34:25.511 > I (126) esp_image: segment 1: paddr=0002cb0c vaddr=3ffb0000 size=0350ch ( 13580) load
+01:34:25.517 > I (132) esp_image: segment 2: paddr=00030020 vaddr=400d0020 size=908d4h (592084) map
+01:34:25.719 > I (334) esp_image: segment 3: paddr=000c08fc vaddr=3ffb350c size=00e8ch (  3724) load
+01:34:25.725 > I (336) esp_image: segment 4: paddr=000c1790 vaddr=40080000 size=181b8h ( 98744) load
+01:34:25.761 > I (376) esp_image: segment 5: paddr=000d9950 vaddr=50000000 size=00020h (    32) load
+01:34:25.774 > I (388) boot: Loaded app from partition at offset 0x10000
+01:34:25.774 > I (389) boot: Disabling RNG early entropy source...
+01:34:25.783 > I (399) cpu_start: Multicore app
+01:34:25.792 > I (407) cpu_start: GPIO 3 and 1 are used as console UART I/O pins
+01:34:25.800 > I (408) cpu_start: Pro cpu start user code
+01:34:25.800 > I (408) cpu_start: cpu freq: 160000000 Hz
+01:34:25.805 > I (409) app_init: Application information:
+01:34:25.816 > I (413) app_init: Project name:     eMeter32
+01:34:25.816 > I (417) app_init: App version:      1.0.0
+01:34:25.816 > I (421) app_init: Compile time:     Oct 10 2026 01:24:35
+01:34:25.821 > I (426) app_init: ELF file SHA256:  a08f57ab1...
+01:34:25.834 > I (430) app_init: ESP-IDF:          5.5.3
+01:34:25.834 > I (434) efuse_init: Min chip rev:     v0.0
+01:34:25.834 > I (438) efuse_init: Max chip rev:     v3.99 
+01:34:25.837 > I (442) efuse_init: Chip rev:         v3.1
+01:34:25.837 > I (446) heap_init: Initializing. RAM available for dynamic allocation:
+01:34:25.850 > I (452) heap_init: At 3FFAE6E0 len 00001920 (6 KiB): DRAM
+01:34:25.850 > I (457) heap_init: At 3FFB88C0 len 00027740 (157 KiB): DRAM
+01:34:25.855 > I (462) heap_init: At 3FFE0440 len 00003AE0 (14 KiB): D/IRAM
+01:34:25.863 > I (468) heap_init: At 3FFE4350 len 0001BCB0 (111 KiB): D/IRAM
+01:34:25.867 > I (473) heap_init: At 400981B8 len 00007E48 (31 KiB): IRAM
+01:34:25.873 > I (480) spi_flash: detected chip: generic
+01:34:25.876 > I (482) spi_flash: flash io: dio
+01:34:25.883 > I (486) main_task: Started on CPU0
+01:34:25.883 > I (496) main_task: Calling app_main()
+01:34:25.906 > W (516) settings: no valid settings, using defaults
+01:34:25.914 > I (526) wifi:wifi driver task: 3ffc06ec, prio:23, stack:6656, core=0
+01:34:25.922 > I (536) wifi:wifi firmware version: 4df78f2
+01:34:25.922 > I (536) wifi:wifi certification version: v7.0
+01:34:25.928 > I (536) wifi:config NVS flash: enabled
+01:34:25.933 > I (536) wifi:config nano formatting: disabled
+01:34:25.933 > I (536) wifi:Init data frame dynamic rx buffer num: 32
+01:34:25.939 > I (546) wifi:Init static rx mgmt buffer num: 5
+01:34:25.944 > I (546) wifi:Init management short buffer num: 32
+01:34:25.950 > I (546) wifi:Init dynamic tx buffer num: 32
+01:34:25.950 > I (556) wifi:Init static rx buffer size: 1600
+01:34:25.956 > I (556) wifi:Init static rx buffer num: 10
+01:34:25.961 > I (566) wifi:Init dynamic rx buffer num: 32
+01:34:25.966 > I (566) wifi_init: rx ba win: 6
+01:34:25.966 > I (566) wifi_init: accept mbox: 6
+01:34:25.972 > I (576) wifi_init: tcpip mbox: 32
+01:34:25.972 > I (576) wifi_init: udp mbox: 6
+01:34:25.978 > I (576) wifi_init: tcp mbox: 6
+01:34:25.978 > I (576) wifi_init: tcp tx win: 5760
+01:34:25.984 > I (586) wifi_init: tcp rx win: 5760
+01:34:25.984 > I (586) wifi_init: tcp mss: 1440
+01:34:25.991 > I (586) wifi_init: WiFi IRAM OP enabled
+01:34:25.991 > I (596) wifi_init: WiFi RX IRAM OP enabled
+01:34:25.994 > W (596) wifi_mgr: SSID not configured -> AP required
+01:34:26.000 > I (606) main: wifi state = 3
+01:34:26.000 > I (606) main_task: Returned from app_main()
+01:34:26.005 > I (616) portal: AP 'eMeter32-99a0' started, IP 192.168.4.1
+01:34:26.011 > I (616) portal: http server started
+01:38:24.315 > ets Jul 29 2019 12:21:46
+01:38:24.316 > 
+01:38:24.316 > rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+01:38:24.321 > configsip: 0, SPIWP:0xee
+01:38:24.321 > clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+01:38:24.326 > mode:DIO, clock div:2
+01:38:24.333 > load:0x3fff0030,len:6280
+01:38:24.333 > load:0x40078000,len:15864
+01:38:24.336 > load:0x40080400,len:3920
+01:38:24.336 > entry 0x4008063c
+01:38:24.344 > I (27) boot: ESP-IDF 5.5.3 2nd stage bootloader
+01:38:24.344 > I (27) boot: compile time Oct 10 2026 01:28:58
+01:38:24.354 > I (28) boot: Multicore bootloader
+01:38:24.355 > I (29) boot: chip revision: v3.1
+01:38:24.355 > I (31) boot.esp32: SPI Speed      : 40MHz
+01:38:24.363 > I (35) boot.esp32: SPI Mode       : DIO
+01:38:24.363 > I (39) boot.esp32: SPI Flash Size : 4MB
+01:38:24.366 > I (42) boot: Enabling RNG early entropy source...
+01:38:24.372 > I (47) boot: Partition Table:
+01:38:24.372 > I (49) boot: ## Label            Usage          Type ST Offset   Length
+01:38:24.378 > I (56) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+01:38:24.388 > I (62) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+01:38:24.395 > I (69) boot:  2 factory          factory app      00 00 00010000 00100000
+01:38:24.399 > I (75) boot: End of partition table
+01:38:24.405 > I (79) esp_image: segment 0: paddr=00010020 vaddr=3f400020 size=1cae4h (117476) map
+01:38:24.441 > I (126) esp_image: segment 1: paddr=0002cb0c vaddr=3ffb0000 size=0350ch ( 13580) load
+01:38:24.447 > I (132) esp_image: segment 2: paddr=00030020 vaddr=400d0020 size=908d4h (592084) map
+01:38:24.649 > I (334) esp_image: segment 3: paddr=000c08fc vaddr=3ffb350c size=00e8ch (  3724) load
+01:38:24.655 > I (336) esp_image: segment 4: paddr=000c1790 vaddr=40080000 size=181b8h ( 98744) load
+01:38:24.692 > I (376) esp_image: segment 5: paddr=000d9950 vaddr=50000000 size=00020h (    32) load
+01:38:24.703 > I (388) boot: Loaded app from partition at offset 0x10000
+01:38:24.704 > I (389) boot: Disabling RNG early entropy source...
+01:38:24.712 > I (399) cpu_start: Multicore app
+01:38:24.723 > I (407) cpu_start: GPIO 3 and 1 are used as console UART I/O pins
+01:38:24.728 > I (408) cpu_start: Pro cpu start user code
+01:38:24.728 > I (408) cpu_start: cpu freq: 160000000 Hz
+01:38:24.734 > I (409) app_init: Application information:
+01:38:24.741 > I (413) app_init: Project name:     eMeter32
+01:38:24.741 > I (417) app_init: App version:      1.0.0
+01:38:24.746 > I (421) app_init: Compile time:     Oct 10 2026 01:24:35
+01:38:24.751 > I (426) app_init: ELF file SHA256:  a08f57ab1...
+01:38:24.758 > I (430) app_init: ESP-IDF:          5.5.3
+01:38:24.758 > I (434) efuse_init: Min chip rev:     v0.0
+01:38:24.762 > I (438) efuse_init: Max chip rev:     v3.99 
+01:38:24.768 > I (442) efuse_init: Chip rev:         v3.1
+01:38:24.768 > I (446) heap_init: Initializing. RAM available for dynamic allocation:
+01:38:24.778 > I (452) heap_init: At 3FFAE6E0 len 00001920 (6 KiB): DRAM
+01:38:24.778 > I (457) heap_init: At 3FFB88C0 len 00027740 (157 KiB): DRAM
+01:38:24.784 > I (462) heap_init: At 3FFE0440 len 00003AE0 (14 KiB): D/IRAM
+01:38:24.790 > I (468) heap_init: At 3FFE4350 len 0001BCB0 (111 KiB): D/IRAM
+01:38:24.795 > I (473) heap_init: At 400981B8 len 00007E48 (31 KiB): IRAM
+01:38:24.801 > I (480) spi_flash: detected chip: generic
+01:38:24.806 > I (482) spi_flash: flash io: dio
+01:38:24.812 > I (486) main_task: Started on CPU0
+01:38:24.812 > I (496) main_task: Calling app_main()
+01:38:24.835 > W (516) settings: no valid settings, using defaults
+01:38:24.843 > I (526) wifi:wifi driver task: 3ffc06ec, prio:23, stack:6656, core=0
+01:38:24.851 > I (536) wifi:wifi firmware version: 4df78f2
+01:38:24.851 > I (536) wifi:wifi certification version: v7.0
+01:38:24.858 > I (536) wifi:config NVS flash: enabled
+01:38:24.863 > I (536) wifi:config nano formatting: disabled
+01:38:24.863 > I (536) wifi:Init data frame dynamic rx buffer num: 32
+01:38:24.869 > I (546) wifi:Init static rx mgmt buffer num: 5
+01:38:24.875 > I (546) wifi:Init management short buffer num: 32
+01:38:24.880 > I (546) wifi:Init dynamic tx buffer num: 32
+01:38:24.880 > I (556) wifi:Init static rx buffer size: 1600
+01:38:24.885 > I (556) wifi:Init static rx buffer num: 10
+01:38:24.892 > I (566) wifi:Init dynamic rx buffer num: 32
+01:38:24.897 > I (566) wifi_init: rx ba win: 6
+01:38:24.897 > I (566) wifi_init: accept mbox: 6
+01:38:24.902 > I (576) wifi_init: tcpip mbox: 32
+01:38:24.902 > I (576) wifi_init: udp mbox: 6
+01:38:24.907 > I (576) wifi_init: tcp mbox: 6
+01:38:24.907 > I (576) wifi_init: tcp tx win: 5760
+01:38:24.914 > I (586) wifi_init: tcp rx win: 5760
+01:38:24.914 > I (586) wifi_init: tcp mss: 1440
+01:38:24.920 > I (586) wifi_init: WiFi IRAM OP enabled
+01:38:24.920 > I (596) wifi_init: WiFi RX IRAM OP enabled
+01:38:24.924 > W (596) wifi_mgr: SSID not configured -> AP required
+01:38:24.930 > I (606) main: wifi state = 3
+01:38:24.930 > I (606) main_task: Returned from app_main()
+01:38:24.936 > I (616) portal: AP 'eMeter32-99a0' started, IP 192.168.4.1
+01:38:24.941 > I (616) portal: http server started
+01:38:41.155 > ets Jul 29 2019 12:21:46
+01:38:41.155 > 
+01:38:41.155 > rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+01:38:41.161 > configsip: 0, SPIWP:0xee
+01:38:41.161 > clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+01:38:41.167 > mode:DIO, clock div:2
+01:38:41.172 > load:0x3fff0030,len:6280
+01:38:41.172 > load:0x40078000,len:15864
+01:38:41.177 > load:0x40080400,len:3920
+01:38:41.177 > entry 0x4008063c
+01:38:41.183 > I (27) boot: ESP-IDF 5.5.3 2nd stage bootloader
+01:38:41.184 > I (27) boot: compile time Oct 10 2026 01:28:58
+01:38:41.189 > I (28) boot: Multicore bootloader
+01:38:41.195 > I (29) boot: chip revision: v3.1
+01:38:41.195 > I (31) boot.esp32: SPI Speed      : 40MHz
+01:38:41.200 > I (35) boot.esp32: SPI Mode       : DIO
+01:38:41.200 > I (39) boot.esp32: SPI Flash Size : 4MB
+01:38:41.206 > I (42) boot: Enabling RNG early entropy source...
+01:38:41.212 > I (47) boot: Partition Table:
+01:38:41.212 > I (49) boot: ## Label            Usage          Type ST Offset   Length
+01:38:41.217 > I (56) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+01:38:41.229 > I (62) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+01:38:41.236 > I (69) boot:  2 factory          factory app      00 00 00010000 00100000
+01:38:41.243 > I (75) boot: End of partition table
+01:38:41.245 > I (79) esp_image: segment 0: paddr=00010020 vaddr=3f400020 size=1cae4h (117476) map
+01:38:41.281 > I (126) esp_image: segment 1: paddr=0002cb0c vaddr=3ffb0000 size=0350ch ( 13580) load
+01:38:41.294 > I (132) esp_image: segment 2: paddr=00030020 vaddr=400d0020 size=908d4h (592084) map
+01:38:41.490 > I (334) esp_image: segment 3: paddr=000c08fc vaddr=3ffb350c size=00e8ch (  3724) load
+01:38:41.495 > I (336) esp_image: segment 4: paddr=000c1790 vaddr=40080000 size=181b8h ( 98744) load
+01:38:41.536 > I (376) esp_image: segment 5: paddr=000d9950 vaddr=50000000 size=00020h (    32) load
+01:38:41.588 > I (388) boot: Loaded app from partition at offset 0x10000
+01:38:41.588 > I (389) boot: Disabling RNG early entropy source...
+01:38:41.588 > I (399) cpu_start: Multicore app
+01:38:41.588 > I (407) cpu_start: GPIO 3 and 1 are used as console UART I/O pins
+01:38:41.588 > I (408) cpu_start: Pro cpu start user code
+01:38:41.588 > I (408) cpu_start: cpu freq: 160000000 Hz
+01:38:41.588 > I (409) app_init: Application information:
+01:38:41.588 > I (413) app_init: Project name:     eMeter32
+01:38:41.588 > I (417) app_init: App version:      1.0.0
+01:38:41.588 > I (421) app_init: Compile time:     Oct 10 2026 01:24:35
+01:38:41.597 > I (426) app_init: ELF file SHA256:  a08f57ab1...
+01:38:41.597 > I (430) app_init: ESP-IDF:          5.5.3
+01:38:41.597 > I (434) efuse_init: Min chip rev:     v0.0
+01:38:41.623 > I (438) efuse_init: Max chip rev:     v3.99 
+01:38:41.623 > I (442) efuse_init: Chip rev:         v3.1
+01:38:41.623 > I (446) heap_init: Initializing. RAM available for dynamic allocation:
+01:38:41.623 > I (452) heap_init: At 3FFAE6E0 len 00001920 (6 KiB): DRAM
+01:38:41.623 > I (457) heap_init: At 3FFB88C0 len 00027740 (157 KiB): DRAM
+01:38:41.627 > I (462) heap_init: At 3FFE0440 len 00003AE0 (14 KiB): D/IRAM
+01:38:41.645 > I (468) heap_init: At 3FFE4350 len 0001BCB0 (111 KiB): D/IRAM
+01:38:41.645 > I (473) heap_init: At 400981B8 len 00007E48 (31 KiB): IRAM
+01:38:41.645 > I (480) spi_flash: detected chip: generic
+01:38:41.656 > I (482) spi_flash: flash io: dio
+01:38:41.656 > I (486) main_task: Started on CPU0
+01:38:41.656 > I (496) main_task: Calling app_main()
+01:38:41.676 > W (516) settings: no valid settings, using defaults
+01:38:41.688 > I (526) wifi:wifi driver task: 3ffc06ec, prio:23, stack:6656, core=0
+01:38:41.708 > I (536) wifi:wifi firmware version: 4df78f2
+01:38:41.708 > I (536) wifi:wifi certification version: v7.0
+01:38:41.708 > I (536) wifi:config NVS flash: enabled
+01:38:41.708 > I (536) wifi:config nano formatting: disabled
+01:38:41.708 > I (536) wifi:Init data frame dynamic rx buffer num: 32
+01:38:41.727 > I (546) wifi:Init static rx mgmt buffer num: 5
+01:38:41.727 > I (546) wifi:Init management short buffer num: 32
+01:38:41.727 > I (546) wifi:Init dynamic tx buffer num: 32
+01:38:41.727 > I (556) wifi:Init static rx buffer size: 1600
+01:38:41.727 > I (556) wifi:Init static rx buffer num: 10
+01:38:41.744 > I (566) wifi:Init dynamic rx buffer num: 32
+01:38:41.744 > I (566) wifi_init: rx ba win: 6
+01:38:41.744 > I (566) wifi_init: accept mbox: 6
+01:38:41.744 > I (576) wifi_init: tcpip mbox: 32
+01:38:41.744 > I (576) wifi_init: udp mbox: 6
+01:38:41.763 > I (576) wifi_init: tcp mbox: 6
+01:38:41.763 > I (576) wifi_init: tcp tx win: 5760
+01:38:41.763 > I (586) wifi_init: tcp rx win: 5760
+01:38:41.763 > I (586) wifi_init: tcp mss: 1440
+01:38:41.763 > I (586) wifi_init: WiFi IRAM OP enabled
+01:38:41.763 > I (596) wifi_init: WiFi RX IRAM OP enabled
+01:38:41.771 > W (596) wifi_mgr: SSID not configured -> AP required
+01:38:41.771 > I (606) main: wifi state = 3
+01:38:41.771 > I (606) main_task: Returned from app_main()
+01:38:41.776 > I (616) portal: AP 'eMeter32-99a0' started, IP 192.168.4.1
+01:38:41.783 > I (616) portal: http server started

@@ -1,0 +1,4297 @@
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\CMakeLists.txt 
+================================================== 
+ 
+cmake_minimum_required(VERSION 3.16.0)
+include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+set(PROJECT_VER "ver. 0.2")
+project(eMeter32)
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\partitions.csv 
+================================================== 
+ 
+# Name,   Type, SubType, Offset,   Size,     Flags
+nvs,      data, nvs,     0x9000,   0x6000,
+otadata,  data, ota,     0xf000,   0x2000,
+phy_init, data, phy,     0x11000,  0x1000,
+ota_0,    app,  ota_0,   0x20000,  0x180000,
+ota_1,    app,  ota_1,   0x1A0000, 0x180000,
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\sdkconfig.defaults 
+================================================== 
+ 
+CONFIG_ESP_TASK_WDT_EN=y
+
+CONFIG_LOG_DEFAULT_LEVEL_WARN=y
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_SILENT=y
+
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0x8000
+
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\platformio.ini 
+================================================== 
+ 
+; PlatformIO Project Configuration File
+;
+;   Build options: build flags, source filter
+;   Upload options: custom upload port, speed and extra flags
+;   Library options: dependencies, extra library storages
+;   Advanced options: extra scripting
+;
+; Please visit documentation for the other options and examples
+; https://docs.platformio.org/page/projectconf.html
+
+[platformio]
+default_envs = debug  ;release
+
+[env:d1_mini32]
+platform = espressif32
+board = wemos_d1_mini32
+framework = espidf
+
+board_build.partitions = partitions.csv
+
+[env:debug]
+extends = env:d1_mini32
+build_type = debug
+monitor_speed = 115200
+monitor_filters = esp32_exception_decoder, time, log2file
+
+[env:release]
+extends = env:d1_mini32
+build_type = release 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\board_config\CMakeLists.txt 
+================================================== 
+ 
+idf_component_register(INCLUDE_DIRS "include"
+                       REQUIRES esp_driver_gpio esp_driver_uart)
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\board_config\include\board_config.h 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#pragma once
+#include "driver/gpio.h"
+#include "driver/uart.h"
+
+/* Все назначения выводов в одном месте. Проверьте по маркировке своей платы! */
+
+/* Дисплей SSD1306 (I2C) */
+#define PIN_I2C_SDA          GPIO_NUM_21
+#define PIN_I2C_SCL          GPIO_NUM_22
+#define OLED_I2C_ADDR        0x3C          /* 0x78 в 8-битной записи */
+
+/* PZEM-004T (UART, 9600 8N1) */
+#define PZEM_UART            UART_NUM_1
+#define PIN_PZEM_TX          GPIO_NUM_17   /* TX платы -> RX PZEM */
+#define PIN_PZEM_RX          GPIO_NUM_16   /* RX платы <- TX PZEM (через делитель/конвертер уровней!) */
+
+/* Кнопка вызова портала настроек (между пином и GND) */
+#define PIN_PORTAL_BUTTON    GPIO_NUM_4
+#define PORTAL_BUTTON_HOLD_MS 3000
+
+/* Входы импульсов от компараторов LM393 (каналы энергии E1 и E2) */
+#define PIN_PULSE_E1         GPIO_NUM_32
+#define PIN_PULSE_E2         GPIO_NUM_33
+#define PULSE_GLITCH_NS      10000         /* фильтр помех, не более ~12800 нс */
+#define PULSE_COUNT_FALLING  0             /* 0 - считать по переднему фронту (low->high), 1 - по заднему */
+#define PULSE_PULL_UP        1             /* внутренняя подтяжка (нужна для выхода LM393 с открытым коллектором) */
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\captive_portal\captive_portal.c 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#include "captive_portal.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_http_server.h"
+#include "esp_wifi.h"
+#include "esp_netif.h"
+#include "esp_timer.h"
+#include "esp_system.h"
+#include "esp_log.h"
+#include "lwip/sockets.h"
+#include "settings.h"
+#include "portal_page.h"
+#include "wifi_mgr.h"
+#include "driver/gpio.h"
+
+/* Встроенный светодиод платы (D1 mini32: GPIO2, горит при 1) */
+#ifndef PORTAL_LED_GPIO
+#define PORTAL_LED_GPIO      GPIO_NUM_2
+#endif
+#ifndef PORTAL_LED_ON_LEVEL
+#define PORTAL_LED_ON_LEVEL  1
+#endif
+#define PORTAL_LED_ON_US     50000     /* вспышка 50 мс */
+#define PORTAL_LED_PERIOD_US 1000000   /* период 1 с */
+
+#ifndef WIFI_TX_POWER_AP
+#define WIFI_TX_POWER_AP 44      /* 11 дБм, единицы по 0,25 дБм */
+#endif
+
+static const char *TAG = "portal";
+
+#define BODY_MAX     3072
+#define SCAN_MAX     20
+
+static bool s_started;
+static esp_ip4_addr_t s_ap_ip;
+
+/* ---------- DNS: на любой A-запрос отвечаем адресом точки доступа ---------- */
+
+static void dns_task(void *arg) {
+    int s = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+    if (s < 0) {
+        ESP_LOGE(TAG, "dns socket failed");
+        vTaskDelete(NULL);
+        return;
+    }
+    struct sockaddr_in a = { 0 };
+    a.sin_family = AF_INET;
+    a.sin_port = htons(53);
+    a.sin_addr.s_addr = htonl(INADDR_ANY);
+    if (bind(s, (struct sockaddr *)&a, sizeof(a)) < 0) {
+        ESP_LOGE(TAG, "dns bind failed");
+        close(s);
+        vTaskDelete(NULL);
+        return;
+    }
+    uint8_t buf[512];
+    for (;;) {
+        struct sockaddr_in from;
+        socklen_t fl = sizeof(from);
+        int n = recvfrom(s, buf, sizeof(buf) - 16, 0, (struct sockaddr *)&from, &fl);
+        if (n < 17) continue;
+        if (buf[2] & 0x80) continue;                       /* это ответ, не запрос */
+        if (((buf[4] << 8) | buf[5]) != 1) continue;       /* ожидаем один вопрос */
+        int p = 12;
+        while (p < n && buf[p] != 0) {
+            if (buf[p] & 0xC0) { p = n; break; }
+            p += buf[p] + 1;
+        }
+        if (p + 5 > n) continue;
+        p++;                                               /* завершающий 0 имени */
+        uint16_t qtype = (uint16_t)((buf[p] << 8) | buf[p + 1]);
+        int len = p + 4;
+        buf[2] = 0x81;
+        buf[3] = 0x80;
+        buf[6] = buf[7] = buf[8] = buf[9] = buf[10] = buf[11] = 0;
+        if (qtype == 1) {
+            buf[7] = 1;
+            buf[len++] = 0xC0; buf[len++] = 0x0C;          /* указатель на имя */
+            buf[len++] = 0; buf[len++] = 1;                /* тип A */
+            buf[len++] = 0; buf[len++] = 1;                /* класс IN */
+            buf[len++] = 0; buf[len++] = 0; buf[len++] = 0; buf[len++] = 60;
+            buf[len++] = 0; buf[len++] = 4;
+            memcpy(&buf[len], &s_ap_ip.addr, 4);
+            len += 4;
+        }
+        sendto(s, buf, len, 0, (struct sockaddr *)&from, fl);
+    }
+}
+
+/* ---------- Вспомогательные функции HTML ---------- */
+
+static void send_str(httpd_req_t *r, const char *s) {
+    httpd_resp_sendstr_chunk(r, s);
+}
+
+static void send_esc(httpd_req_t *r, const char *s) {
+    char buf[128];
+    size_t n = 0;
+    for (; *s; s++) {
+        const char *rep = NULL;
+        switch (*s) {
+            case '&':  rep = "&amp;";  break;
+            case '<':  rep = "&lt;";   break;
+            case '>':  rep = "&gt;";   break;
+            case '"':  rep = "&quot;"; break;
+            case '\'': rep = "&#39;";  break;
+            default: break;
+        }
+        size_t rl = rep ? strlen(rep) : 1;
+        if (n + rl >= sizeof(buf)) {
+            buf[n] = 0;
+            send_str(r, buf);
+            n = 0;
+        }
+        if (rep) {
+            memcpy(buf + n, rep, rl);
+        } else {
+            buf[n] = *s;
+        }
+        n += rl;
+    }
+    buf[n] = 0;
+    if (n) send_str(r, buf);
+}
+
+static void fld(httpd_req_t *r, const char *label, const char *name, const char *type,
+                const char *val, const char *attrs) {
+    send_str(r, "<label>");
+    send_str(r, label);
+    send_str(r, "<input type='");
+    send_str(r, type);
+    send_str(r, "' name='");
+    send_str(r, name);
+    send_str(r, "' id='");
+    send_str(r, name);
+    send_str(r, "' value='");
+    send_esc(r, val);
+    send_str(r, "' ");
+    send_str(r, attrs);
+    send_str(r, "></label>");
+}
+
+/* Значки "показать/скрыть пароль": контурные, серые (currentColor), без фона.
+   Видны либо глаз (пароль скрыт), либо перечёркнутый глаз (пароль виден) - см. CSS .eye / .sh */
+#define SVG_OPEN "<svg viewBox='0 0 24 24' width='22' height='22' fill='none' stroke='currentColor' " \
+                 "stroke-width='1' stroke-linecap='round' stroke-linejoin='round'"
+#define SVG_EYE  "<path d='M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z'/><circle cx='12' cy='12' r='3'/>"
+static const char EYE_ICONS[] =
+    SVG_OPEN " class='on'>" SVG_EYE "</svg>"
+    SVG_OPEN " class='off'>" SVG_EYE "<path d='M3 3l18 18'/></svg>";
+
+/* Поле пароля с кнопкой-значком внутри поля. Показывает/скрывает только то, что вводится;
+   сохранённые пароли устройство не отдаёт (в поле всегда пусто, как и раньше). */
+static void fld_pw(httpd_req_t *r, const char *label, const char *name, const char *attrs) {
+    send_str(r, "<label>");
+    send_str(r, label);
+    send_str(r, "<span class='pw'><input type='password' name='");
+    send_str(r, name);
+    send_str(r, "' id='");
+    send_str(r, name);
+    send_str(r, "' value='' ");
+    send_str(r, attrs);
+    send_str(r, "><button type='button' class='eye' title='Показать/скрыть пароль' data-f='");
+    send_str(r, name);
+    send_str(r, "' onclick='eye(this)'>");
+    send_str(r, EYE_ICONS);
+    send_str(r, "</button></span></label>");
+}
+
+/* ---------- Обработчики HTTP ---------- */
+
+static esp_err_t root_get(httpd_req_t *r) {
+    const settings_t *c = settings_get();
+    char buf[48];
+
+    httpd_resp_set_type(r, "text/html; charset=utf-8");
+    send_str(r, PAGE_HEAD);
+    send_esc(r, BRAND_NAME);
+    send_str(r, " — настройки</h1><p>firmware: ");
+    send_esc(r, FIRMWARE_VERSION);
+    send_str(r, "</p><form method='post' action='/save'>");
+
+    send_str(r, "<fieldset><legend>Wi-Fi</legend>"
+                "<button type='button' id='sb' onclick='scan()'>Сканировать сети</button>"
+                "<div class='dd' id='dd'>"
+                "<button type='button' class='ddb' id='ddb' onclick='tgl()'>Выберите сеть</button>"
+                "<div class='ddl' id='nets'></div></div>");
+    fld(r, "SSID", "ssid", "text", c->wifi_ssid, "maxlength='32' required");
+    fld_pw(r, "Пароль (пусто = не менять, '-' = очистить)", "pass",
+           c->wifi_pass[0] ? "placeholder='(задан)' maxlength='63'" : "placeholder='(не задан)' maxlength='63'");
+    if (c->wifi_bssid_set) {
+        snprintf(buf, sizeof(buf), "%02X:%02X:%02X:%02X:%02X:%02X", c->wifi_bssid[0], c->wifi_bssid[1],
+                 c->wifi_bssid[2], c->wifi_bssid[3], c->wifi_bssid[4], c->wifi_bssid[5]);
+    } else {
+        buf[0] = 0;
+    }
+    fld(r, "BSSID (пусто = любой роутер)", "bssid", "text", buf,
+        "placeholder='AA:BB:CC:DD:EE:FF' maxlength='17'");
+    fld(r, "Имя хоста", "hostname", "text", c->hostname, "maxlength='31' required");
+    send_str(r, "</fieldset>");
+
+    snprintf(buf, sizeof(buf), "%u", (unsigned)c->mqtt_port);
+    send_str(r, "<fieldset><legend>MQTT (пустой адрес = отключено)</legend>");
+    fld(r, "Адрес брокера", "mhost", "text", c->mqtt_host, "maxlength='63' placeholder='192.168.254.60'");
+    fld(r, "Порт (по умолчанию 1883)", "mport", "number", buf, "min='1' max='65535'");
+    fld(r, "Логин", "muser", "text", c->mqtt_user, "maxlength='31'");
+    fld_pw(r, "Пароль (пусто = не менять, '-' = очистить)", "mpass",
+           c->mqtt_pass[0] ? "placeholder='(задан)' maxlength='31'" : "placeholder='(не задан)' maxlength='31'");
+    fld(r, "Топик (префикс)", "topic", "text", c->mqtt_topic, "maxlength='63'");
+    fld(r, "Топик Discovery", "dtopic", "text", c->mqtt_discovery_topic, "maxlength='63'");
+    send_str(r, "<label><input type='checkbox' name='disc' value='1'");
+    if (c->mqtt_auto_discovery) send_str(r, " checked");
+    send_str(r, "> Автообнаружение Home Assistant</label></fieldset>");
+
+    snprintf(buf, sizeof(buf), "%d", c->tz);
+    send_str(r, "<fieldset><legend>Время</legend>");
+    fld(r, "NTP-сервер", "ntp", "text", c->ntp_server, "maxlength='63'");
+    fld(r, "Часовой пояс (часы от UTC, -12..14)", "tz", "number", buf, "min='-12' max='14'");
+    send_str(r, "</fieldset>");
+
+    send_str(r, "<fieldset><legend>Счётчик энергии</legend>");
+    snprintf(buf, sizeof(buf), "%.2f", (double)c->initial_E1);
+    fld(r, "Начальное значение E1, кВт·ч", "e1", "number", buf, "min='0' step='0.01'");
+    snprintf(buf, sizeof(buf), "%.2f", (double)c->initial_E2);
+    fld(r, "Начальное значение E2, кВт·ч", "e2", "number", buf, "min='0' step='0.01'");
+    snprintf(buf, sizeof(buf), "%lu", (unsigned long)c->coeff);
+    fld(r, "Коэффициент, импульсов на кВт·ч", "coeff", "number", buf, "min='1'");
+    send_str(r, "</fieldset>");
+
+    snprintf(buf, sizeof(buf), "%u", (unsigned)c->pzem_period_s);
+    send_str(r, "<fieldset><legend>Период опроса сенсоров тока</legend>");
+    fld(r, "Период, секунд (60..3600)", "pzem", "number", buf, "min='60' max='3600'");
+    send_str(r, "</fieldset>");
+
+    snprintf(buf, sizeof(buf), "%lu", (unsigned long)c->stats_period_s);
+    send_str(r, "<fieldset><legend>Статистика (http, json) (пустой URI = отключено)</legend>");
+    fld(r, "URI сервера статистики", "suri", "text", c->stats_uri,
+        "maxlength='127' placeholder='http://192.168.1.10:8080/stats'");
+    fld(r, "Период отправки, секунд (60..86400)", "sper", "number", buf, "min='60' max='86400'");
+    send_str(r, "</fieldset>");
+
+    send_str(r, "<button type='submit'>Сохранить и перезагрузить</button></form>");
+    send_str(r, PAGE_TAIL);
+    return httpd_resp_sendstr_chunk(r, NULL);
+}
+
+static void json_esc(const char *s, char *out, size_t ol) {
+    size_t o = 0;
+    for (; *s && o + 7 < ol; s++) {
+        unsigned char ch = (unsigned char)*s;
+        if (ch == '"' || ch == '\\') {
+            out[o++] = '\\';
+            out[o++] = (char)ch;
+        } else if (ch < 0x20) {
+            o += (size_t)snprintf(out + o, ol - o, "\\u%04x", ch);
+        } else {
+            out[o++] = (char)ch;
+        }
+    }
+    out[o] = 0;
+}
+
+static esp_err_t scan_get(httpd_req_t *r) {
+    httpd_resp_set_type(r, "application/json");
+    if (esp_wifi_scan_start(NULL, true) != ESP_OK) {
+        return httpd_resp_sendstr(r, "[]");
+    }
+    wifi_ap_record_t *recs = calloc(SCAN_MAX, sizeof(wifi_ap_record_t));
+    if (!recs) return httpd_resp_send_err(r, HTTPD_500_INTERNAL_SERVER_ERROR, "no memory");
+    uint16_t n = SCAN_MAX;
+    if (esp_wifi_scan_get_ap_records(&n, recs) != ESP_OK) n = 0;
+
+    send_str(r, "[");
+    bool first = true;
+    for (uint16_t i = 0; i < n; i++) {
+        if (recs[i].ssid[0] == 0) continue;
+        char ss[200];
+        char line[340];
+        json_esc((const char *)recs[i].ssid, ss, sizeof(ss));
+        snprintf(line, sizeof(line),
+                 "%s{\"ssid\":\"%s\",\"bssid\":\"%02X:%02X:%02X:%02X:%02X:%02X\",\"rssi\":%d,\"ch\":%d,\"auth\":%d}",
+                 first ? "" : ",", ss, recs[i].bssid[0], recs[i].bssid[1], recs[i].bssid[2],
+                 recs[i].bssid[3], recs[i].bssid[4], recs[i].bssid[5], recs[i].rssi, recs[i].primary,
+                 (int)recs[i].authmode);
+        send_str(r, line);
+        first = false;
+    }
+    free(recs);
+    send_str(r, "]");
+    return httpd_resp_sendstr_chunk(r, NULL);
+}
+
+/* ---------- Разбор формы ---------- */
+
+static int hexv(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+/* Сырое значение поля формы (с декодированием %XX и +), без обрезки пробелов */
+static bool form_get(const char *body, const char *key, char *out, size_t outlen) {
+    size_t kl = strlen(key);
+    const char *p = body;
+    while (*p) {
+        const char *amp = strchr(p, '&');
+        size_t seg = amp ? (size_t)(amp - p) : strlen(p);
+        if (seg > kl && p[kl] == '=' && strncmp(p, key, kl) == 0) {
+            const char *v = p + kl + 1;
+            const char *end = p + seg;
+            size_t o = 0;
+            while (v < end && o + 1 < outlen) {
+                char c = *v;
+                if (c == '+') {
+                    c = ' ';
+                    v++;
+                } else if (c == '%' && v + 2 < end && hexv(v[1]) >= 0 && hexv(v[2]) >= 0) {
+                    c = (char)((hexv(v[1]) << 4) | hexv(v[2]));
+                    v += 3;
+                } else {
+                    v++;
+                }
+                out[o++] = c;
+            }
+            out[o] = 0;
+            return true;
+        }
+        p += seg;
+        if (*p == '&') p++;
+    }
+    return false;
+}
+
+/* Убирает пробельные символы в начале и в конце строки */
+static void trim(char *s) {
+    size_t n = strlen(s);
+    while (n > 0 && isspace((unsigned char)s[n - 1])) s[--n] = 0;
+    size_t i = 0;
+    while (s[i] && isspace((unsigned char)s[i])) i++;
+    if (i) memmove(s, s + i, strlen(s + i) + 1);
+}
+
+/* Значение поля с обрезкой пробелов по краям */
+static bool form_get_t(const char *body, const char *key, char *out, size_t outlen) {
+    if (!form_get(body, key, out, outlen)) return false;
+    trim(out);
+    return true;
+}
+
+/* Текстовое поле: если есть в форме - копируем (с обрезкой пробелов) */
+static bool set_str(const char *b, const char *k, char *dst, size_t dl) {
+    char t[128];
+    if (!form_get_t(b, k, t, sizeof(t))) return true;
+    if (strlen(t) >= dl) return false;
+    strcpy(dst, t);
+    return true;
+}
+
+/* Пароль: пробелы значимы, пусто = не менять, '-' = очистить */
+static bool set_secret(const char *b, const char *k, char *dst, size_t dl) {
+    char t[128];
+    if (!form_get(b, k, t, sizeof(t)) || t[0] == 0) return true;
+    if (strcmp(t, "-") == 0) {
+        dst[0] = 0;
+        return true;
+    }
+    if (strlen(t) >= dl) return false;
+    strcpy(dst, t);
+    return true;
+}
+
+static bool get_long(const char *b, const char *k, long mn, long mx, long *out) {
+    char t[32];
+    if (!form_get_t(b, k, t, sizeof(t))) return true;
+    char *e;
+    long v = strtol(t, &e, 10);
+    if (t[0] == 0 || *e != 0 || v < mn || v > mx) return false;
+    *out = v;
+    return true;
+}
+
+static bool get_float(const char *b, const char *k, float *out) {
+    char t[32];
+    if (!form_get_t(b, k, t, sizeof(t))) return true;
+    for (char *p = t; *p; p++) {
+        if (*p == ',') *p = '.';
+    }
+    char *e;
+    float v = strtof(t, &e);
+    if (t[0] == 0 || *e != 0) return false;
+    *out = v;
+    return true;
+}
+
+static bool host_chars_ok(const char *h) {
+    for (; *h; h++) {
+        if (!isalnum((unsigned char)*h) && *h != '.' && *h != '-' && *h != '_') return false;
+    }
+    return true;
+}
+
+static const char *apply_form(const char *b, settings_t *s) {
+    char t[128];
+
+    /* SSID: пробелы внутри и по краям допустимы, поэтому без trim */
+    if (!form_get(b, "ssid", t, sizeof(t)) || t[0] == 0) return "Укажите SSID";
+    if (strlen(t) >= sizeof(s->wifi_ssid)) return "SSID слишком длинный";
+    strcpy(s->wifi_ssid, t);
+    if (!set_secret(b, "pass", s->wifi_pass, sizeof(s->wifi_pass))) return "Пароль Wi-Fi слишком длинный";
+
+    if (form_get_t(b, "bssid", t, sizeof(t))) {
+        if (t[0] == 0) {
+            s->wifi_bssid_set = false;
+            memset(s->wifi_bssid, 0, sizeof(s->wifi_bssid));
+        } else {
+            unsigned v[6];
+            if (strlen(t) != 17 ||
+                sscanf(t, "%2x:%2x:%2x:%2x:%2x:%2x", &v[0], &v[1], &v[2], &v[3], &v[4], &v[5]) != 6) {
+                return "Неверный формат BSSID (нужно AA:BB:CC:DD:EE:FF)";
+            }
+            for (int i = 0; i < 6; i++) s->wifi_bssid[i] = (uint8_t)v[i];
+            s->wifi_bssid_set = true;
+        }
+    }
+
+    if (form_get_t(b, "hostname", t, sizeof(t))) {
+        size_t n = strlen(t);
+        if (n == 0 || n >= sizeof(s->hostname)) return "Неверная длина имени хоста";
+        for (size_t i = 0; i < n; i++) {
+            if (!isalnum((unsigned char)t[i]) && t[i] != '-') {
+                return "Имя хоста: только латинские буквы, цифры и дефис";
+            }
+        }
+        strcpy(s->hostname, t);
+    }
+
+    /* MQTT: адрес и порт хранятся отдельно */
+    if (form_get_t(b, "mhost", t, sizeof(t))) {
+        if (strlen(t) >= sizeof(s->mqtt_host)) return "Адрес брокера слишком длинный";
+        if (!host_chars_ok(t)) return "Адрес брокера: только имя или IP, без mqtt:// и порта";
+        strcpy(s->mqtt_host, t);
+    }
+    long port = s->mqtt_port;
+    if (form_get_t(b, "mport", t, sizeof(t)) && t[0] == 0) {
+        port = MQTT_DEFAULT_PORT;                      /* пустой порт = по умолчанию */
+    } else if (!get_long(b, "mport", 1, 65535, &port)) {
+        return "Порт MQTT: число от 1 до 65535";
+    }
+    s->mqtt_port = (uint16_t)port;
+    if (!set_str(b, "muser", s->mqtt_user, sizeof(s->mqtt_user))) return "Логин MQTT слишком длинный";
+    if (!set_secret(b, "mpass", s->mqtt_pass, sizeof(s->mqtt_pass))) return "Пароль MQTT слишком длинный";
+    if (!set_str(b, "topic", s->mqtt_topic, sizeof(s->mqtt_topic))) return "Топик слишком длинный";
+    if (!set_str(b, "dtopic", s->mqtt_discovery_topic, sizeof(s->mqtt_discovery_topic))) return "Топик Discovery слишком длинный";
+    s->mqtt_auto_discovery = form_get(b, "disc", t, sizeof(t)) ? 1 : 0;
+
+    if (!set_str(b, "ntp", s->ntp_server, sizeof(s->ntp_server))) return "Адрес NTP слишком длинный";
+    long tz = s->tz;
+    if (!get_long(b, "tz", -12, 14, &tz)) return "Часовой пояс: число от -12 до 14";
+    s->tz = (int8_t)tz;
+
+    if (!get_float(b, "e1", &s->initial_E1)) return "Неверное значение E1";
+    if (!get_float(b, "e2", &s->initial_E2)) return "Неверное значение E2";
+    long coeff = (long)s->coeff;
+    if (!get_long(b, "coeff", 1, 1000000, &coeff)) return "Коэффициент: число от 1 до 1000000";
+    s->coeff = (uint32_t)coeff;
+    long pz = s->pzem_period_s;
+    if (!get_long(b, "pzem", 60, 3600, &pz)) return "Период опроса: от 60 до 3600 секунд";
+    s->pzem_period_s = (uint16_t)pz;
+
+    /* Статистика: пустой URI = выключено */
+    char u[STATS_URI_LEN + 1];
+    if (form_get_t(b, "suri", u, sizeof(u))) {
+        if (strlen(u) >= sizeof(s->stats_uri)) return "URI статистики слишком длинный";
+        if (u[0] && strncmp(u, "http://", 7) != 0 && strncmp(u, "https://", 8) != 0) {
+            return "URI статистики должен начинаться с http:// или https://";
+        }
+        strcpy(s->stats_uri, u);
+    }
+    long sp = (long)s->stats_period_s;
+    if (!get_long(b, "sper", STATS_PERIOD_MIN_S, STATS_PERIOD_MAX_S, &sp)) {
+        return "Период статистики: от 60 до 86400 секунд";
+    }
+    s->stats_period_s = (uint32_t)sp;
+    return NULL;
+}
+
+static esp_err_t send_msg(httpd_req_t *r, const char *status, const char *cls, const char *msg, bool back) {
+    httpd_resp_set_status(r, status);
+    httpd_resp_set_type(r, "text/html; charset=utf-8");
+    send_str(r, PAGE_HEAD);
+    send_esc(r, BRAND_NAME);
+    send_str(r, "</h1><p class='");
+    send_str(r, cls);
+    send_str(r, "'>");
+    send_esc(r, msg);
+    send_str(r, "</p>");
+    if (back) send_str(r, "<p><a href='/'>Назад к настройкам</a></p>");
+    send_str(r, "</body></html>");
+    return httpd_resp_sendstr_chunk(r, NULL);
+}
+
+static void restart_cb(void *arg) {
+    esp_restart();
+}
+
+static esp_err_t save_post(httpd_req_t *r) {
+    size_t total = r->content_len;
+    if (total == 0 || total > BODY_MAX) {
+        return send_msg(r, "400 Bad Request", "err", "Неверный размер запроса", true);
+    }
+    char *body = malloc(total + 1);
+    if (!body) return httpd_resp_send_err(r, HTTPD_500_INTERNAL_SERVER_ERROR, "no memory");
+    size_t got = 0;
+    while (got < total) {
+        int n = httpd_req_recv(r, body + got, total - got);
+        if (n == HTTPD_SOCK_ERR_TIMEOUT) continue;
+        if (n <= 0) {
+            free(body);
+            return ESP_FAIL;
+        }
+        got += (size_t)n;
+    }
+    body[total] = 0;
+
+    settings_t s = *settings_get();
+    const char *err = apply_form(body, &s);
+    free(body);
+    if (err) return send_msg(r, "400 Bad Request", "err", err, true);
+    if (settings_save(&s) != ESP_OK) {
+        return send_msg(r, "400 Bad Request", "err", "Значения вне допустимого диапазона или ошибка записи", true);
+    }
+
+    ESP_LOGI(TAG, "settings saved, restarting");
+    esp_timer_handle_t t;
+    const esp_timer_create_args_t ta = { .callback = restart_cb, .name = "restart" };
+    if (esp_timer_create(&ta, &t) == ESP_OK) esp_timer_start_once(t, 2000000);
+    return send_msg(r, "200 OK", "ok", "Настройки сохранены. Устройство перезагружается и подключится к выбранной сети.", false);
+}
+
+/* Любой неизвестный адрес (проверки доступа Android/iOS/Windows) -> на главную */
+static esp_err_t redirect_404(httpd_req_t *r, httpd_err_code_t err) {
+    char loc[40];
+    snprintf(loc, sizeof(loc), "http://" IPSTR "/", IP2STR(&s_ap_ip));
+    httpd_resp_set_status(r, "302 Found");
+    httpd_resp_set_hdr(r, "Location", loc);
+    return httpd_resp_send(r, NULL, 0);
+}
+
+/* ---------- Маячок: вспышка 50 мс раз в секунду, пока работает портал ---------- */
+
+static esp_timer_handle_t s_led_timer;
+static bool s_led_on;
+
+static void led_timer_cb(void *arg) {
+    s_led_on = !s_led_on;
+    gpio_set_level(PORTAL_LED_GPIO, s_led_on ? PORTAL_LED_ON_LEVEL : !PORTAL_LED_ON_LEVEL);
+    esp_timer_start_once(s_led_timer,
+                         s_led_on ? PORTAL_LED_ON_US : (PORTAL_LED_PERIOD_US - PORTAL_LED_ON_US));
+}
+
+static void led_beacon_start(void) {
+    gpio_reset_pin(PORTAL_LED_GPIO);
+    gpio_set_direction(PORTAL_LED_GPIO, GPIO_MODE_OUTPUT);
+    gpio_set_level(PORTAL_LED_GPIO, !PORTAL_LED_ON_LEVEL);
+
+    const esp_timer_create_args_t ta = { .callback = led_timer_cb, .name = "portal_led" };
+    if (esp_timer_create(&ta, &s_led_timer) == ESP_OK) {
+        s_led_on = false;
+        esp_timer_start_once(s_led_timer, 1000);   /* первая вспышка почти сразу */
+    } else {
+        ESP_LOGW(TAG, "led timer create failed");
+    }
+}
+
+static esp_err_t favicon_get(httpd_req_t *r) {
+    httpd_resp_set_status(r, "204 No Content");
+    return httpd_resp_send(r, NULL, 0);
+}
+
+/* ---------- Запуск ---------- */
+
+static void start_task(void *arg) {
+    esp_netif_t *ap = esp_netif_create_default_wifi_ap();
+    wifi_config_t ac = { 0 };
+    strlcpy((char *)ac.ap.ssid, settings_get()->hostname, sizeof(ac.ap.ssid));
+    ac.ap.ssid_len = (uint8_t)strlen((char *)ac.ap.ssid);
+    ac.ap.channel = 1;
+    ac.ap.authmode = WIFI_AUTH_OPEN;
+    ac.ap.max_connection = 4;
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ac));
+    esp_err_t we = esp_wifi_start();
+    if (we != ESP_OK) {
+        ESP_LOGW(TAG, "esp_wifi_start: %s", esp_err_to_name(we));
+    }
+    esp_wifi_set_max_tx_power(WIFI_TX_POWER_AP);
+
+    esp_netif_ip_info_t ip;
+    esp_netif_get_ip_info(ap, &ip);
+    s_ap_ip = ip.ip;
+    ESP_LOGI(TAG, "AP '%s' started, IP " IPSTR, ac.ap.ssid, IP2STR(&s_ap_ip));
+    
+    led_beacon_start();
+    
+    xTaskCreate(dns_task, "dns", 4096, NULL, 5, NULL);
+
+    httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
+    cfg.stack_size = 8192;
+    cfg.max_uri_handlers = 8;
+    cfg.lru_purge_enable = true;
+    httpd_handle_t srv = NULL;
+    
+    esp_log_level_set("httpd_uri", ESP_LOG_ERROR);   /* не засорять лог запросами проверки сети */
+    
+    if (httpd_start(&srv, &cfg) == ESP_OK) {
+        const httpd_uri_t u_root = { .uri = "/", .method = HTTP_GET, .handler = root_get };
+        const httpd_uri_t u_scan = { .uri = "/scan", .method = HTTP_GET, .handler = scan_get };
+        const httpd_uri_t u_save = { .uri = "/save", .method = HTTP_POST, .handler = save_post };
+        const httpd_uri_t u_fav = { .uri = "/favicon.ico", .method = HTTP_GET, .handler = favicon_get };
+        httpd_register_uri_handler(srv, &u_fav);
+        httpd_register_uri_handler(srv, &u_root);
+        httpd_register_uri_handler(srv, &u_scan);
+        httpd_register_uri_handler(srv, &u_save);
+        httpd_register_err_handler(srv, HTTPD_404_NOT_FOUND, redirect_404);
+        ESP_LOGI(TAG, "http server started");
+    } else {
+        ESP_LOGE(TAG, "http server start failed");
+    }
+    vTaskDelete(NULL);
+}
+
+esp_err_t captive_portal_start(void) {
+    if (s_started) return ESP_OK;
+    s_started = true;
+    return xTaskCreate(start_task, "portal_start", 4096, NULL, 5, NULL) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
+}
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\captive_portal\portal_page.h 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#pragma once
+/* HTML-части страницы настроек: стили (PAGE_HEAD) и скрипт (PAGE_TAIL).
+   Каждая строка - отдельный C-литерал; кавычки внутри HTML лучше писать одинарными. */
+static const char PAGE_HEAD[] =
+    "<!DOCTYPE html><html lang='ru'><head><meta charset='utf-8'>\n"
+    "<meta name='viewport' content='width=device-width,initial-scale=1'><title>eMeter32</title><style>\n"
+    ":root{--c:#0a6cff}\n"
+    "*{box-sizing:border-box}\n"
+    "body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;max-width:520px;margin:0 auto;padding:14px 14px 20px;background:#eef1f5;color:#1d2733}\n"
+    "h1{font-size:1.35em;margin:6px 0}\n"
+    "p{color:#5b6773;margin:4px 0 10px}\n"
+    "fieldset{background:#fff;border:0;border-radius:12px;margin:12px 0;padding:6px 14px 14px;box-shadow:0 1px 3px rgba(0,0,0,.12)}\n"
+    "legend{font-weight:700;color:var(--c);padding:0 6px;font-size:1.05em}\n"
+    "label{display:block;margin:10px 0 3px;font-size:.88em;font-weight: 600;color:#44505c}\n"
+    "input,select{width:100%;padding:10px;font-size:1em;border:1px solid #c5ccd4;border-radius:8px;background:#ecf4ff}\n"
+    "input:focus,select:focus{outline:2px solid var(--c);border-color:var(--c)}\n"
+    "input[type=checkbox]{width:auto;margin-right:8px}\n"
+    ".pw{position:relative;display:block}\n"
+    ".pw input{padding-right:46px}\n"
+    ".pw .eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:34px;height:34px;margin:0;padding:0;"
+    "background:none;border:0;border-radius:50%;box-shadow:none;color:#5f6368;display:flex;align-items:center;justify-content:center;cursor:pointer}\n"
+    ".pw .eye:hover{color:#202124}\n"
+    ".eye .off{display:none}\n"
+    ".eye.sh .on{display:none}\n"
+    ".eye.sh .off{display:block}\n"
+    "button{padding:12px 16px;font-size:1em;border:0;border-radius:8px;background:#b6d1f3;color:#1d2733;margin:8px 0;width:100%}\n"
+    "button:disabled{opacity:.6}\n"
+    "button[type=submit]{position:sticky;bottom:10px;background:var(--c);color:#fff;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.25)}\n"
+    "a{color:var(--c)}\n"
+    ".err{color:#b00020;font-weight:600}\n"
+    ".ok{color:#0a7a2f;font-weight:600}\n"
+    ".dd{position:relative;margin:8px 0}\n"
+    ".ddb{background:#fff;border:1px solid #c5ccd4;text-align:left;margin:0;padding:8px 36px 8px 10px;position:relative;min-height:46px}\n"
+    ".ddb:after{content:'';position:absolute;right:14px;top:50%;margin-top:-3px;border:5px solid transparent;border-top-color:#667;}\n"
+    ".ddl{display:none;position:absolute;left:0;right:0;top:100%;z-index:10;background:#fff;border:1px solid #c5ccd4;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.2);max-height:55vh;overflow-y:auto;margin-top:4px}\n"
+    ".dd.open .ddl{display:block}\n"
+    ".it{display:block;padding:9px 10px;border-bottom:1px solid #eef1f5;cursor:pointer}\n"
+    ".ddl .it:last-child{border-bottom:0}\n"
+    ".ddl .it:hover{background:#eef4ff}\n"
+    ".it .t{display:flex;align-items:center;gap:8px}\n"
+    ".it .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}\n"
+    ".it .s{display:block;font-size:.78em;color:#667;margin:2px 0 0 30px}\n"
+    ".lk{flex:none;font-size:.9em}\n"
+    ".em{display:block;padding:12px;color:#667}\n"
+    ".bars{display:inline-flex;align-items:flex-end;gap:2px;height:14px;width:22px;flex:none}\n"
+    ".bars i{display:block;width:4px;background:#c9d1da;border-radius:1px}\n"
+    ".bars i:nth-child(1){height:4px}\n"
+    ".bars i:nth-child(2){height:7px}\n"
+    ".bars i:nth-child(3){height:10px}\n"
+    ".bars i:nth-child(4){height:14px}\n"
+    ".l1 i.on{background:#d93025}\n"
+    ".l2 i.on{background:#f29900}\n"
+    ".l3 i.on,.l4 i.on{background:#188038}\n"
+    "</style></head><body><h1>\n";
+
+static const char PAGE_TAIL[] =
+    "<script>\n"
+    "var AN=['Открытая','WEP','WPA','WPA2','WPA/WPA2','WPA2-Ent','WPA3','WPA2/WPA3','WAPI','OWE'];\n"
+    "var SEL=false;\n"
+    "function lv(r){return r>-55?4:r>-67?3:r>-78?2:r>-88?1:0;}\n"
+    "function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e;}\n"
+    "function bars(r){\n"
+    "var b=el('span','bars l'+lv(r));\n"
+    "for(var i=0;i<4;i++){b.appendChild(el('i',i<lv(r)?'on':''));}\n"
+    "return b;\n"
+    "}\n"
+    "function mk(n){\n"
+    "var it=el('span','it');\n"
+    "var t=el('span','t');\n"
+    "t.appendChild(bars(n.rssi));\n"
+    "t.appendChild(el('span','nm',n.ssid));\n"
+    "if(n.auth>0){t.appendChild(el('span','lk','\\uD83D\\uDD12'));}\n"
+    "it.appendChild(t);\n"
+    "it.appendChild(el('span','s',n.bssid+'  \\u00B7  ch'+n.ch+'  \\u00B7  '+n.rssi+' dBm  \\u00B7  '+(n.auth>0?(AN[n.auth]||'Защищена'):AN[0])));\n"
+    "return it;\n"
+    "}\n"
+    "function tgl(){document.getElementById('dd').classList.toggle('open');}\n"
+    "document.addEventListener('click',function(e){\n"
+    "var d=document.getElementById('dd');\n"
+    "if(d&&!d.contains(e.target)){d.classList.remove('open');}\n"
+    "});\n"
+    "function pickNet(n){\n"
+    "document.getElementById('ssid').value=n.ssid;\n"
+    "document.getElementById('bssid').value=n.bssid;\n"
+    "var b=document.getElementById('ddb');\n"
+    "b.innerHTML='';b.appendChild(mk(n));\n"
+    "SEL=true;\n"
+    "document.getElementById('dd').classList.remove('open');\n"
+    "}\n"
+    "function scan(){\n"
+    "var b=document.getElementById('sb');\n"
+    "if(!b||b.disabled)return;\n"
+    "b.disabled=true;b.textContent='Поиск сетей...';\n"
+    "fetch('/scan').then(function(r){return r.json();}).then(function(l){\n"
+    "l.sort(function(a,c){return c.rssi-a.rssi;});\n"
+    "var box=document.getElementById('nets');box.innerHTML='';\n"
+    "if(!l.length){box.appendChild(el('span','em','Сети не найдены'));}\n"
+    "l.forEach(function(n){var it=mk(n);it.onclick=function(){pickNet(n);};box.appendChild(it);});\n"
+    "if(!SEL){document.getElementById('ddb').textContent='Выберите сеть ('+l.length+')';}\n"
+    "b.disabled=false;b.textContent='Обновить список сетей';\n"
+    "}).catch(function(){b.disabled=false;b.textContent='Ошибка поиска, повторить';});\n"
+    "}\n"
+    "function eye(b){\n"
+    "var i=document.getElementById(b.getAttribute('data-f'));\n"
+    "var s=(i.type==='password');\n"
+    "i.type=s?'text':'password';\n"
+    "b.classList.toggle('sh',s);\n"
+    "}\n"
+    "scan();\n"
+    "</script></body></html>\n";
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\captive_portal\CMakeLists.txt 
+================================================== 
+ 
+idf_component_register(SRCS "captive_portal.c"
+                       INCLUDE_DIRS "include"
+                       REQUIRES esp_http_server esp_wifi esp_netif esp_event esp_timer esp_driver_gpio lwip settings wifi_mgr)
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\captive_portal\include\captive_portal.h 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#pragma once
+#include "esp_err.h"
+
+/* Запускает точку доступа, DNS-перехват и веб-сервер настроек.
+   Можно вызывать из любого контекста (в т.ч. из callback wifi_mgr). */
+esp_err_t captive_portal_start(void);
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\display_ui\display_ui.c 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#include "display_ui.h"
+#include <stdio.h>
+#include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_log.h"
+#include "esp_timer.h"
+#include "board_config.h"
+#include "oled.h"
+#include "wifi_mgr.h"
+#include "pzem004t.h"
+#include "settings.h"
+
+static const char *TAG = "display";
+
+#define REFRESH_MS 1000
+
+static int rssi_level(int rssi) {
+    if (rssi == 0) return 0;
+    return rssi > -55 ? 4 : rssi > -67 ? 3 : rssi > -78 ? 2 : rssi > -88 ? 1 : 0;
+}
+
+/* Полоски уровня сигнала в правой части желтой зоны */
+static void draw_bars(int level) {
+    for (int i = 0; i < 4; i++) {
+        int h = 2 + 2 * i;
+        int x = 104 + i * 5;
+        if (i < level) {
+            oled_fill_rect(x, 8 - h, 3, h, true);
+        } else {
+            oled_fill_rect(x, 7, 3, 1, true);
+        }
+    }
+}
+
+static void fmt_age(char *out, size_t n, int64_t ms) {
+    int64_t s = ms / 1000;
+    if (s < 60) {
+        snprintf(out, n, "%ds", (int)s);
+    } else if (s < 3600) {
+        snprintf(out, n, "%dm", (int)(s / 60));
+    } else {
+        snprintf(out, n, "%dh", (int)(s / 3600));
+    }
+}
+
+/* Желтая зона (y 0..15): статус Wi-Fi */
+static void draw_wifi_status(void) {
+    char a[32];
+    char b[32];
+    const settings_t *c = settings_get();
+    switch (wifi_mgr_state()) {
+        case WIFI_MGR_CONNECTED: {
+            snprintf(a, sizeof(a), "WiFi OK %ddBm", wifi_mgr_rssi());
+            if (wifi_mgr_ip(b, sizeof(b)) != ESP_OK) strcpy(b, "no IP");
+            draw_bars(rssi_level(wifi_mgr_rssi()));
+            break;
+        }
+        case WIFI_MGR_CONNECTING:
+            strcpy(a, "WiFi connecting...");
+            snprintf(b, sizeof(b), "%.20s", c->wifi_ssid);
+            break;
+        case WIFI_MGR_RETRY_WAIT:
+            strcpy(a, "WiFi retry wait");
+            snprintf(b, sizeof(b), "%.20s", c->wifi_ssid);
+            break;
+        default:
+            snprintf(a, sizeof(a), "SETUP %.14s", c->hostname);
+            strcpy(b, "http://192.168.4.1");
+            break;
+    }
+    oled_text(0, 1, a, 1);
+    oled_text(0, 9, b, 1);
+}
+
+/* Синяя зона (y 16..63): показания сети */
+static void draw_power(void) {
+    pzem_data_t d;
+    pzem_get_last(&d);
+    char l[32];
+    if (!d.valid) {
+        oled_text(0, 30, d.error_count ? "PZEM: no answer" : "PZEM: waiting...", 1);
+        return;
+    }
+    snprintf(l, sizeof(l), "%5.1fV  %4.1fHz", d.voltage, d.frequency);
+    oled_text(0, 19, l, 1);
+    snprintf(l, sizeof(l), "%6.3fA  PF %.2f", d.current, d.power_factor);
+    oled_text(0, 29, l, 1);
+    snprintf(l, sizeof(l), "%.1fW", d.power);
+    oled_text(0, 39, l, 2);
+    snprintf(l, sizeof(l), "%.3fkWh", d.energy_kwh);
+    oled_text(0, 56, l, 1);
+
+    char age[12];
+    fmt_age(age, sizeof(age), esp_timer_get_time() / 1000 - d.timestamp_ms);
+    if (d.error_count) {
+        snprintf(l, sizeof(l), "ERR %s", age);
+    } else {
+        snprintf(l, sizeof(l), "%s", age);
+    }
+    oled_text(OLED_W - oled_text_width(l, 1), 56, l, 1);
+}
+
+static void ui_task(void *arg) {
+    for (;;) {
+        oled_clear();
+        draw_wifi_status();
+        draw_power();
+        if (oled_flush() != ESP_OK) {
+            ESP_LOGW(TAG, "flush failed");
+        }
+        vTaskDelay(pdMS_TO_TICKS(REFRESH_MS));
+    }
+}
+
+esp_err_t display_ui_start(void) {
+    esp_err_t e = oled_init(PIN_I2C_SDA, PIN_I2C_SCL, OLED_I2C_ADDR);
+    if (e != ESP_OK) return e;
+    return xTaskCreate(ui_task, "display", 4096, NULL, 3, NULL) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
+}
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\display_ui\CMakeLists.txt 
+================================================== 
+ 
+idf_component_register(SRCS "display_ui.c"
+                       INCLUDE_DIRS "include"
+                       REQUIRES oled wifi_mgr pzem004t settings esp_timer board_config)
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\display_ui\include\display_ui.h 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#pragma once
+#include "esp_err.h"
+
+/* Инициализирует дисплей и запускает задачу обновления экрана (раз в секунду) */
+esp_err_t display_ui_start(void);
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\ha_discovery\ha_discovery.c 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#include "ha_discovery.h"
+#include <math.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_log.h"
+#include "esp_mac.h"
+#include "esp_timer.h"
+#include "mqtt_mgr.h"
+#include "settings.h"
+#include "pzem004t.h"
+#include "pulse_counter.h"
+#include "wifi_mgr.h"
+#include "ntp_sync.h"
+#include "resources.h"
+#include "ota_update.h"
+
+static const char *TAG = "ha";
+
+/* Иерархия топиков: <mqtt_topic>/<номер чипа>/<id>/{state|set|attributes}, статус - <base>/status.
+   Основа учёта - импульсы. Канал в HA: основной сенсор = CHANNEL_ENTITIES[0] (энергия, только отображение),
+   остальные записи CHANNEL_ENTITIES[1..] публикуются его атрибутами (JSON в <base>/<id>/attributes, retained).
+   Число импульсов лежит в атрибуте PULSES_KEY и используется для восстановления после перезагрузки.
+   Канал публикуется при изменении сотой доли кВт*ч (каждые coeff/100 импульсов) и по периоду pzem_period_s.
+   "Set energy E1/E2" - только команда из HA: состояние не публикуется (в HA сущность optimistic).
+   Энергия в кВт*ч везде публикуется и вводится с точностью 2 знака после запятой. */
+#define PULSES_KEY       "imp"      /* id i_imp0 без цифры канала */
+#define LEGACY_PULSES_ID "imp0"     /* прежний служебный топик <base>/imp<N>/state: только для миграции */
+
+static bool s_legacy_cleared[CHANNEL_COUNT];
+static bool s_pub_have[CHANNEL_COUNT];
+static uint32_t s_pub_bucket[CHANNEL_COUNT];    /* последняя опубликованная сотая доля кВт*ч */
+
+/* сотые доли кВт*ч: floor(total * 100 / coeff), без потерь для любого коэффициента */
+static uint32_t energy_bucket(uint32_t total) {
+    uint32_t coeff = pulse_counter_coeff();
+    if (coeff == 0) coeff = 1;
+    return (uint32_t)(((uint64_t)total * 100ULL) / coeff);
+}
+
+/* ---------- JSON-строитель ---------- */
+
+typedef struct { char *buf; size_t cap, len; } sb_t;
+
+static void sb_add(sb_t *s, const char *fmt, ...) {
+    if (s->len >= s->cap) return;
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(s->buf + s->len, s->cap - s->len, fmt, ap);
+    va_end(ap);
+    if (n > 0) s->len += (size_t)n;
+}
+
+static void sb_esc(sb_t *s, const char *v) {
+    for (; *v; v++) {
+        unsigned char ch = (unsigned char)*v;
+        if (ch == '"' || ch == '\\') sb_add(s, "\\%c", ch);
+        else if (ch < 0x20) sb_add(s, "\\u%04x", ch);
+        else sb_add(s, "%c", ch);
+    }
+}
+
+/* "key":"value", - пропускается, если значение пустое */
+static void sb_kv(sb_t *s, const char *key, const char *val) {
+    if (!val || !val[0]) return;
+    sb_add(s, "\"%s\":\"", key);
+    sb_esc(s, val);
+    sb_add(s, "\",");
+}
+
+/* убирает последнюю запятую, если она есть */
+static void sb_trim_comma(sb_t *s) {
+    if (s->len > 0 && s->len < s->cap && s->buf[s->len - 1] == ',') s->buf[--s->len] = '\0';
+}
+
+/* ---------- Вспомогательное ---------- */
+
+static bool is_number(const char *const *e) { return strcmp(e[0], s_number) == 0; }
+
+/* "Set energy E1/E2": только команда, без состояния */
+static bool is_set_energy(const char *id) { return !strcmp(id, i_e1) || !strcmp(id, i_e2); }
+
+static void chan_topic_id(const char *id, int ch, char *out, size_t n) {
+    strlcpy(out, id, n);
+    size_t l = strlen(out);
+    if (l) out[l - 1] = (char)('0' + ch);       /* energy0 -> energy1 */
+}
+
+static void pub_state(const char *topic_id, const char *val, bool retain) {
+    char t[256];
+    snprintf(t, sizeof(t), "%s/%s/state", mqtt_mgr_base_topic(), topic_id);
+    mqtt_mgr_publish(t, val, 0, retain);
+}
+
+/* топик атрибутов основного сенсора канала */
+static void chan_attr_topic(int ch, char *out, size_t n) {
+    char tid[40];
+    chan_topic_id(CHANNEL_ENTITIES[0][2], ch, tid, sizeof(tid));
+    snprintf(out, n, "%s/%s/attributes", mqtt_mgr_base_topic(), tid);
+}
+
+/* то же в прежней иерархии <mqtt_topic>/<hostname>/... (миграция) */
+static void old_attr_topic(int ch, char *out, size_t n) {
+    char tid[40];
+    chan_topic_id(CHANNEL_ENTITIES[0][2], ch, tid, sizeof(tid));
+    snprintf(out, n, "%s/%s/attributes", mqtt_mgr_old_base_topic(), tid);
+}
+
+/* ---------- Значения ---------- */
+
+static bool get_general(const char *id, char *out, size_t n) {
+    const settings_t *c = settings_get();
+    pzem_data_t p;
+    pzem_get_last(&p);
+
+    if (!strcmp(id, i_voltage)) { if (!p.valid) return false; snprintf(out, n, "%.1f", p.voltage); return true; }
+    if (!strcmp(id, i_current)) { if (!p.valid) return false; snprintf(out, n, "%.3f", p.current); return true; }
+    if (!strcmp(id, i_power))   { if (!p.valid) return false; snprintf(out, n, "%.1f", p.power); return true; }
+    if (!strcmp(id, i_freq))    { if (!p.valid) return false; snprintf(out, n, "%.1f", p.frequency); return true; }
+    if (!strcmp(id, i_pf))      { if (!p.valid) return false; snprintf(out, n, "%.2f", p.power_factor); return true; }
+    if (!strcmp(id, i_energy))  {   /* показания PZEM с коррекцией energy_offset, 2 знака */
+        if (!p.valid) return false;
+        snprintf(out, n, "%.2f", (double)p.energy_kwh + (double)c->energy_offset);
+        return true;
+    }
+    if (!strcmp(id, i_time)) {      /* время последнего удачного опроса PZEM, ISO 8601 с поясом */
+        if (!p.valid || !ntp_sync_is_synced()) return false;
+        int64_t age_s = (esp_timer_get_time() / 1000 - p.timestamp_ms) / 1000;
+        time_t tt = time(NULL) - (time_t)age_s;
+        struct tm tm;
+        localtime_r(&tt, &tm);
+        size_t l = strftime(out, n, "%Y-%m-%dT%H:%M:%S", &tm);
+        snprintf(out + l, n - l, "%+03d:00", (int)c->tz);
+        return true;
+    }
+    /* i_e1 / i_e2 ("Set energy"): состояния нет - значение задаётся только из HA */
+    if (!strcmp(id, i_e0))       { snprintf(out, n, "%.2f", (double)c->energy_offset); return true; }
+    if (!strcmp(id, i_constant)) { snprintf(out, n, "%lu", (unsigned long)c->coeff); return true; }
+    if (!strcmp(id, i_mqtt_per)) { snprintf(out, n, "%u", (unsigned)c->pzem_period_s); return true; }
+    if (!strcmp(id, i_stat_per)) { snprintf(out, n, "%lu", (unsigned long)c->stats_period_s); return true; }
+    if (!strcmp(id, i_rssi)) {
+        int r = wifi_mgr_rssi();
+        if (r == 0) return false;
+        snprintf(out, n, "%d", r);
+        return true;
+    }
+    return false;
+}
+
+/* Значение записи CHANNEL_ENTITIES (числовое): энергия кВт*ч (2 знака) для отображения, импульсы - как есть */
+static bool get_channel(const char *id, int ch, char *out, size_t n) {
+    pulse_counter_data_t d;
+    if (pulse_counter_get((pulse_ch_t)ch, &d) != ESP_OK || !d.restored) return false;
+    if (!strcmp(id, i_energy0)) { snprintf(out, n, "%.2f", d.kwh); return true; }
+    if (!strcmp(id, i_imp0))    { snprintf(out, n, "%lu", (unsigned long)d.total); return true; }
+    return false;
+}
+
+/* Атрибуты сенсора RSSI: ip, mac, chip_id */
+static void publish_rssi_attributes(void) {
+    char buf[160], t[256], ip[20], m[20];
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    snprintf(m, sizeof(m), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+    sb_t s = { buf, sizeof(buf), 0 };
+    sb_add(&s, "{");
+    if (wifi_mgr_ip(ip, sizeof(ip)) == ESP_OK) sb_kv(&s, i_ip, ip);
+    sb_kv(&s, i_mac, m);
+    sb_kv(&s, i_chip, mqtt_mgr_chip_id());
+    sb_trim_comma(&s);
+    sb_add(&s, "}");
+    if (s.len >= s.cap) return;
+    snprintf(t, sizeof(t), "%s/%s/attributes", mqtt_mgr_base_topic(), i_rssi);
+    mqtt_mgr_publish(t, buf, 0, true);
+}
+
+static void publish_channel(int ch) {
+    char v[40], tid[40], t[256], buf[160];
+    pulse_counter_data_t d;
+    if (pulse_counter_get((pulse_ch_t)ch, &d) != ESP_OK || !d.restored) return;   /* пока не восстановлено - не публикуем */
+
+    s_pub_bucket[ch] = energy_bucket(d.total);      /* запоминаем, что опубликовано */
+    s_pub_have[ch] = true;
+
+    /* основной сенсор: CHANNEL_ENTITIES[0] */
+    const char *main_id = CHANNEL_ENTITIES[0][2];
+    if (get_channel(main_id, ch, v, sizeof(v))) {
+        chan_topic_id(main_id, ch, tid, sizeof(tid));
+        pub_state(tid, v, true);
+    }
+
+    /* атрибуты: CHANNEL_ENTITIES[1..], ключ = id без цифры канала, значение - число */
+    sb_t s = { buf, sizeof(buf), 0 };
+    sb_add(&s, "{");
+    for (size_t j = 1; j < CHANNEL_ENTITY_COUNT; j++) {
+        const char *id = CHANNEL_ENTITIES[j][2];
+        char key[24];
+        strlcpy(key, id, sizeof(key));
+        size_t kl = strlen(key);
+        if (kl && key[kl - 1] >= '0' && key[kl - 1] <= '9') key[kl - 1] = '\0';
+        if (get_channel(id, ch, v, sizeof(v))) sb_add(&s, "\"%s\":%s,", key, v);
+    }
+    sb_trim_comma(&s);
+    sb_add(&s, "}");
+    if (s.len < s.cap) {
+        chan_attr_topic(ch, t, sizeof(t));
+        mqtt_mgr_publish(t, buf, 0, true);
+    }
+
+    /* миграция: служебный топик <base>/imp<N>/state больше не нужен, очищаем (один раз за запуск) */
+    if (!s_legacy_cleared[ch]) {
+        s_legacy_cleared[ch] = true;
+        chan_topic_id(LEGACY_PULSES_ID, ch, tid, sizeof(tid));
+        snprintf(t, sizeof(t), "%s/%s/state", mqtt_mgr_base_topic(), tid);
+        mqtt_mgr_publish(t, "", 1, true);
+    }
+}
+
+static void publish_all_states(void) {
+    char v[48];
+    for (size_t i = 0; i < GENERAL_ENTITY_COUNT; i++) {
+        const char *const *e = GENERAL_ENTITIES[i];
+        if (is_set_energy(e[2])) continue;                 /* состояние не публикуется */
+        if (get_general(e[2], v, sizeof(v))) pub_state(e[2], v, is_number(e));
+    }
+    publish_rssi_attributes();
+    for (int ch = 0; ch < CHANNEL_COUNT; ch++) publish_channel(ch);
+}
+
+/* ---------- Discovery ---------- */
+
+static const number_limits_t *find_limits(const char *id) {
+    for (size_t i = 0; i < sizeof(NUMBER_LIMITS) / sizeof(NUMBER_LIMITS[0]); i++) {
+        if (!strcmp(NUMBER_LIMITS[i].id, id)) return &NUMBER_LIMITS[i];
+    }
+    return NULL;
+}
+
+/* блок "device" в конце JSON discovery */
+static void add_device(sb_t *s) {
+    const settings_t *c = settings_get();
+    sb_add(s, "\"device\":{\"identifiers\":[\"");
+    sb_esc(s, c->hostname);
+    sb_add(s, "\"],");
+    sb_kv(s, "name", c->hostname);
+    sb_kv(s, "manufacturer", MANUFACTURER);
+    char model[40];
+    snprintf(model, sizeof(model), "%s %s", BRAND_NAME, MODEL_NAMES[MODEL]);
+    sb_kv(s, "model", model);
+    sb_kv(s, "sw_version", FIRMWARE_VERSION);
+    char ip[20];
+    if (wifi_mgr_ip(ip, sizeof(ip)) == ESP_OK) {
+        char url[40];
+        snprintf(url, sizeof(url), "http://%s", ip);
+        sb_kv(s, "configuration_url", url);
+    }
+    sb_kv(s, "hw_version", HARDWARE_VERSION);
+    sb_trim_comma(s);
+    sb_add(s, "}}");
+}
+
+static void publish_discovery(const char *const *e, int ch) {
+    const settings_t *c = settings_get();
+    const char *type = e[0], *name = e[1], *id = e[2], *scls = e[3], *dcls = e[4];
+    const char *unit = e[5], *cat = e[6], *icon = e[7];
+    const char *base = mqtt_mgr_base_topic();
+
+    char tid[40], full_name[64], uid[96], topic[200], buf[1100];
+    if (ch >= 0) {
+        chan_topic_id(id, ch, tid, sizeof(tid));
+        snprintf(full_name, sizeof(full_name), "%s %s", CHANNEL_NAMES[ch], name);
+    } else {
+        strlcpy(tid, id, sizeof(tid));
+        strlcpy(full_name, name, sizeof(full_name));
+    }
+    snprintf(uid, sizeof(uid), "%s_%s", c->hostname, tid);
+    snprintf(topic, sizeof(topic), "%s/%s/%s/%s/config", c->mqtt_discovery_topic, type, c->hostname, tid);
+
+    char t[256];
+    bool no_state = ch < 0 && is_set_energy(id);        /* команда без состояния */
+    sb_t s = { buf, sizeof(buf), 0 };
+    sb_add(&s, "{");
+    sb_kv(&s, "name", full_name);
+    sb_kv(&s, "unique_id", uid);
+    if (!no_state) {
+        snprintf(t, sizeof(t), "%s/%s/state", base, tid);
+        sb_kv(&s, "state_topic", t);
+    } else {
+        sb_add(&s, "\"optimistic\":true,");             /* HA показывает последнее введённое значение */
+    }
+    snprintf(t, sizeof(t), "%s/status", base);
+    sb_kv(&s, "availability_topic", t);
+    if (ch >= 0) {                               /* основной сенсор канала: атрибуты = остальные записи CHANNEL_ENTITIES */
+        chan_attr_topic(ch, t, sizeof(t));
+        sb_kv(&s, "json_attributes_topic", t);
+    } else if (!strcmp(id, i_rssi)) {            /* ip, mac, chip_id - атрибуты RSSI */
+        snprintf(t, sizeof(t), "%s/%s/attributes", base, id);
+        sb_kv(&s, "json_attributes_topic", t);
+    }
+    sb_kv(&s, "device_class", dcls);
+    sb_kv(&s, "state_class", scls);
+    sb_kv(&s, "unit_of_measurement", unit);
+    sb_kv(&s, "entity_category", cat);
+    sb_kv(&s, "icon", icon);
+    if (ch < 0 && !strcmp(id, i_energy)) sb_add(&s, "\"suggested_display_precision\":2,");
+    if (ch >= 0 && !strcmp(id, i_energy0)) sb_add(&s, "\"suggested_display_precision\":2,");
+    if (is_number(e)) {
+        snprintf(t, sizeof(t), "%s/%s/set", base, tid);
+        sb_kv(&s, "command_topic", t);
+        const number_limits_t *lim = find_limits(id);
+        if (lim) sb_add(&s, "\"min\":%.2f,\"max\":%.2f,\"step\":%.2f,", (double)lim->min, (double)lim->max, (double)lim->step);
+        sb_add(&s, "\"mode\":\"box\",");
+    }
+    add_device(&s);
+    if (s.len >= s.cap) {
+        ESP_LOGW(TAG, "discovery payload too long: %s", tid);
+        return;
+    }
+    mqtt_mgr_publish(topic, buf, 1, true);
+}
+
+/* Удаление того, чего больше нет: пустой retained-payload.
+   Discovery: записи CHANNEL_ENTITIES[1..] (теперь атрибуты), прежние current/power, ip/mac/chip_id (атрибуты RSSI).
+   Состояния: retained <base>/set_energy1|2/state от прежних версий.
+   Прежний статус <mqtt_topic>/<hostname>/status (до перехода на номер чипа). */
+static void remove_obsolete_discovery(void) {
+    static const char *const old_general[] = { "ip", "mac", "chip_id" };
+    static const char *const old_chan[] = { "current", "power" };
+    const settings_t *c = settings_get();
+    char topic[200], tid[40];
+    for (int ch = 0; ch < CHANNEL_COUNT; ch++) {
+        for (size_t j = 1; j < CHANNEL_ENTITY_COUNT; j++) {      /* записи-атрибуты больше не сенсоры */
+            chan_topic_id(CHANNEL_ENTITIES[j][2], ch, tid, sizeof(tid));
+            snprintf(topic, sizeof(topic), "%s/sensor/%s/%s/config", c->mqtt_discovery_topic, c->hostname, tid);
+            mqtt_mgr_publish(topic, "", 1, true);
+        }
+        for (size_t i = 0; i < sizeof(old_chan) / sizeof(old_chan[0]); i++) {
+            snprintf(topic, sizeof(topic), "%s/sensor/%s/%s%d/config", c->mqtt_discovery_topic, c->hostname, old_chan[i], ch);
+            mqtt_mgr_publish(topic, "", 1, true);
+        }
+    }
+    for (size_t i = 0; i < sizeof(old_general) / sizeof(old_general[0]); i++) {
+        snprintf(topic, sizeof(topic), "%s/sensor/%s/%s/config", c->mqtt_discovery_topic, c->hostname, old_general[i]);
+        mqtt_mgr_publish(topic, "", 1, true);
+    }
+    snprintf(topic, sizeof(topic), "%s/%s/state", mqtt_mgr_base_topic(), i_e1);
+    mqtt_mgr_publish(topic, "", 1, true);
+    snprintf(topic, sizeof(topic), "%s/%s/state", mqtt_mgr_base_topic(), i_e2);
+    mqtt_mgr_publish(topic, "", 1, true);
+    if (strcmp(mqtt_mgr_old_base_topic(), mqtt_mgr_base_topic()) != 0) {
+        snprintf(topic, sizeof(topic), "%s/status", mqtt_mgr_old_base_topic());
+        mqtt_mgr_publish(topic, "", 1, true);
+    }
+}
+
+/* ---------- OTA: кнопка запуска сервера обновления и его состояние ---------- */
+
+#define OTA_ID "ota"        /* команда: <base>/ota/set = PRESS; состояние: <base>/ota/state, <base>/ota/attributes */
+
+static void publish_ota_discovery(void) {
+    const settings_t *c = settings_get();
+    const char *base = mqtt_mgr_base_topic();
+    char topic[200], t[256], uid[96], buf[1100];
+
+    /* кнопка */
+    snprintf(topic, sizeof(topic), "%s/button/%s/%s/config", c->mqtt_discovery_topic, c->hostname, OTA_ID);
+    snprintf(uid, sizeof(uid), "%s_%s", c->hostname, OTA_ID);
+    sb_t s = { buf, sizeof(buf), 0 };
+    sb_add(&s, "{");
+    sb_kv(&s, "name", "Firmware update");
+    sb_kv(&s, "unique_id", uid);
+    snprintf(t, sizeof(t), "%s/%s/set", base, OTA_ID);
+    sb_kv(&s, "command_topic", t);
+    sb_kv(&s, "payload_press", "PRESS");
+    snprintf(t, sizeof(t), "%s/status", base);
+    sb_kv(&s, "availability_topic", t);
+    sb_kv(&s, "entity_category", "config");
+    sb_kv(&s, "icon", "mdi:cloud-upload");
+    add_device(&s);
+    if (s.len >= s.cap) ESP_LOGW(TAG, "ota button discovery too long");
+    else mqtt_mgr_publish(topic, buf, 1, true);
+
+    /* состояние сервера: ON/OFF, в атрибутах - ссылка и PIN */
+    snprintf(topic, sizeof(topic), "%s/binary_sensor/%s/%s_server/config", c->mqtt_discovery_topic, c->hostname, OTA_ID);
+    snprintf(uid, sizeof(uid), "%s_%s_server", c->hostname, OTA_ID);
+    s = (sb_t){ buf, sizeof(buf), 0 };
+    sb_add(&s, "{");
+    sb_kv(&s, "name", "Firmware update server");
+    sb_kv(&s, "unique_id", uid);
+    snprintf(t, sizeof(t), "%s/%s/state", base, OTA_ID);
+    sb_kv(&s, "state_topic", t);
+    snprintf(t, sizeof(t), "%s/%s/attributes", base, OTA_ID);
+    sb_kv(&s, "json_attributes_topic", t);
+    sb_add(&s, "\"payload_on\":\"ON\",\"payload_off\":\"OFF\",");
+    snprintf(t, sizeof(t), "%s/status", base);
+    sb_kv(&s, "availability_topic", t);
+    sb_kv(&s, "entity_category", "diagnostic");
+    sb_kv(&s, "icon", "mdi:server-network");
+    add_device(&s);
+    if (s.len >= s.cap) ESP_LOGW(TAG, "ota server discovery too long");
+    else mqtt_mgr_publish(topic, buf, 1, true);
+}
+
+static void publish_ota_state(void) {
+    const char *base = mqtt_mgr_base_topic();
+    bool on = ota_update_is_active();
+    char t[256], v[160], ip[20];
+    snprintf(t, sizeof(t), "%s/%s/state", base, OTA_ID);
+    mqtt_mgr_publish(t, on ? "ON" : "OFF", 1, true);
+    if (on && wifi_mgr_ip(ip, sizeof(ip)) == ESP_OK) {
+        snprintf(v, sizeof(v), "{\"url\":\"http://%s/update\",\"user\":\"%s\",\"pin\":\"%s\"}", ip, OTA_USER, ota_update_pin());
+    } else {
+        strlcpy(v, "{}", sizeof(v));
+    }
+    snprintf(t, sizeof(t), "%s/%s/attributes", base, OTA_ID);
+    mqtt_mgr_publish(t, v, 0, false);       /* PIN не retained */
+}
+
+static void on_ota_state(bool active) {
+    (void)active;
+    publish_ota_state();
+}
+
+static void handle_ota_command(const char *val) {
+    if (strcmp(val, "PRESS") != 0) return;
+    esp_err_t e = ota_update_start();
+    ESP_LOGI(TAG, "ota start -> %s", esp_err_to_name(e));
+}
+
+static void publish_all_discovery(void) {
+    for (size_t i = 0; i < GENERAL_ENTITY_COUNT; i++) publish_discovery(GENERAL_ENTITIES[i], -1);
+    for (int ch = 0; ch < CHANNEL_COUNT; ch++) publish_discovery(CHANNEL_ENTITIES[0], ch);   /* только основной сенсор */
+    publish_ota_discovery();
+    remove_obsolete_discovery();
+}
+
+/* ---------- Команды из HA ---------- */
+
+static bool parse_num(const char *s, double *out) {
+    char *end;
+    double v = strtod(s, &end);
+    if (end == s || !isfinite(v)) return false;
+    *out = v;
+    return true;
+}
+
+static void handle_command(const char *id, const char *val) {
+    double v;
+    if (!parse_num(val, &v)) {
+        ESP_LOGW(TAG, "bad value '%s' for %s", val, id);
+        return;
+    }
+    settings_t s = *settings_get();
+    esp_err_t e = ESP_ERR_INVALID_ARG;
+    bool force_e1 = false, force_e2 = false;
+    double kwh2 = round(v * 100.0) / 100.0;      /* энергия вводится с точностью 0.01 кВт*ч */
+
+    if (is_set_energy(id)) {
+        /* коррекция: кВт*ч (2 знака) из HA -> импульсы (round(kwh * coeff)), счёт продолжается от них.
+           Состояние "Set energy" не публикуется и больше не трогается до следующей коррекции. */
+        bool second = !strcmp(id, i_e2);
+        e = pulse_counter_set_kwh(second ? PULSE_CH_E2 : PULSE_CH_E1, kwh2);
+        if (e == ESP_OK) { force_e1 = !second; force_e2 = second; }
+    } else if (!strcmp(id, i_e0)) {
+        if (fabs(kwh2) <= 10000000.0) {
+            s.energy_offset = (float)kwh2;
+            e = settings_save(&s);
+        }
+    } else if (!strcmp(id, i_constant)) {
+        if (v >= PULSE_COEFF_MIN && v <= PULSE_COEFF_MAX) {
+            uint32_t k = (uint32_t)(v + 0.5);
+            e = pulse_counter_set_coeff(k);     /* импульсы не меняются, пересчитывается только энергия */
+            if (e == ESP_OK) {
+                s.coeff = k;
+                e = settings_save(&s);
+                force_e1 = force_e2 = true;
+            }
+        }
+    } else if (!strcmp(id, i_mqtt_per)) {
+        if (v >= 60 && v <= 3600) {
+            s.pzem_period_s = (uint16_t)(v + 0.5);
+            e = settings_save(&s);
+            if (e == ESP_OK) pzem_poll_now();   /* применить новый период сразу */
+        }
+    } else if (!strcmp(id, i_stat_per)) {
+        if (v >= STATS_PERIOD_MIN_S && v <= STATS_PERIOD_MAX_S) {
+            s.stats_period_s = (uint32_t)(v + 0.5);
+            e = settings_save(&s);
+        }
+    } else {
+        return;
+    }
+    ESP_LOGI(TAG, "command %s=%s -> %s", id, val, esp_err_to_name(e));
+
+    char out[40];
+    if (!is_set_energy(id) && get_general(id, out, sizeof(out))) pub_state(id, out, true);   /* вернуть фактическое значение в HA */
+    if (force_e1) publish_channel(0);       /* ручное изменение публикуем сразу, не дожидаясь сотой доли */
+    if (force_e2) publish_channel(1);
+}
+
+static void restore_pulses(int ch, const char *digits) {
+    char *end;
+    unsigned long long pulses = strtoull(digits, &end, 10);
+    if (end == digits || pulses > UINT32_MAX) return;
+    /* применяется один раз за запуск; повторная доставка вернёт ESP_ERR_INVALID_STATE */
+    if (pulse_counter_restore((pulse_ch_t)ch, (uint32_t)pulses) == ESP_OK) {
+        ESP_LOGI(TAG, "E%d restored from MQTT: %llu pulses", ch + 1, pulses);
+    }
+}
+
+static void on_message(const char *topic, const char *data, int len) {
+    /* миграция: атрибуты в прежней иерархии <mqtt_topic>/<hostname>/... - берём импульсы и очищаем топик */
+    for (int ch = 0; ch < CHANNEL_COUNT; ch++) {
+        char t[256];
+        old_attr_topic(ch, t, sizeof(t));
+        if (strcmp(topic, t) == 0) {
+            const char *p = strstr(data, "\"" PULSES_KEY "\":");
+            if (p) {
+                restore_pulses(ch, p + strlen("\"" PULSES_KEY "\":"));
+                mqtt_mgr_publish(t, "", 1, true);
+            }
+            return;
+        }
+    }
+
+    const char *base = mqtt_mgr_base_topic();
+    size_t bl = strlen(base);
+    if (strncmp(topic, base, bl) != 0 || topic[bl] != '/') return;
+    const char *rest = topic + bl + 1;
+
+    for (int ch = 0; ch < CHANNEL_COUNT; ch++) {
+        char tid[40], want[64];
+
+        /* основной путь: атрибуты основного сенсора канала, ключ "imp" */
+        chan_topic_id(CHANNEL_ENTITIES[0][2], ch, tid, sizeof(tid));
+        snprintf(want, sizeof(want), "%s/attributes", tid);
+        if (strcmp(rest, want) == 0) {
+            const char *p = strstr(data, "\"" PULSES_KEY "\":");
+            if (p) restore_pulses(ch, p + strlen("\"" PULSES_KEY "\":"));
+            return;
+        }
+        /* миграция: служебный топик <base>/imp<N>/state */
+        chan_topic_id(LEGACY_PULSES_ID, ch, tid, sizeof(tid));
+        snprintf(want, sizeof(want), "%s/state", tid);
+        if (strcmp(rest, want) == 0) {
+            restore_pulses(ch, data);
+            return;
+        }
+    }
+
+    const char *slash = strchr(rest, '/');
+    if (!slash || strcmp(slash, "/set") != 0) return;
+    char id[40];
+    size_t il = (size_t)(slash - rest);
+    if (il == 0 || il >= sizeof(id)) return;
+    memcpy(id, rest, il);
+    id[il] = '\0';
+    if (strcmp(id, OTA_ID) == 0) {
+        handle_ota_command(data);
+        return;
+    }
+    handle_command(id, data);
+}
+
+static void on_connected(void) {
+    char t[256];
+    snprintf(t, sizeof(t), "%s/+/set", mqtt_mgr_base_topic());
+    mqtt_mgr_subscribe(t, 1);
+    for (int ch = 0; ch < CHANNEL_COUNT; ch++) {
+        char tid[40];
+        chan_attr_topic(ch, t, sizeof(t));
+        mqtt_mgr_subscribe(t, 1);
+        chan_topic_id(LEGACY_PULSES_ID, ch, tid, sizeof(tid));
+        snprintf(t, sizeof(t), "%s/%s/state", mqtt_mgr_base_topic(), tid);
+        mqtt_mgr_subscribe(t, 1);
+        if (strcmp(mqtt_mgr_old_base_topic(), mqtt_mgr_base_topic()) != 0) {
+            old_attr_topic(ch, t, sizeof(t));       /* перенос накопленных импульсов из прежней иерархии */
+            mqtt_mgr_subscribe(t, 1);
+        }
+    }
+    if (settings_get()->mqtt_auto_discovery) publish_all_discovery();
+    publish_all_states();   /* каналы без восстановленного значения пропускаются */
+    publish_ota_state();
+}
+
+/* ---------- Счётчик импульсов и периодическая публикация ---------- */
+
+/* Публикуем не на каждый импульс, а когда меняется сотая доля кВт*ч (coeff/100 импульсов).
+   Остальное уходит по периоду pzem_period_s (ha_task). */
+static void on_pulse(pulse_ch_t ch, const pulse_counter_data_t *d, void *arg) {
+    if (!d->restored || !mqtt_mgr_is_connected()) return;
+    if (s_pub_have[ch] && energy_bucket(d->total) == s_pub_bucket[ch]) return;
+    publish_channel((int)ch);
+}
+
+static void ha_task(void *arg) {
+    for (;;) {
+        uint32_t p = settings_get()->pzem_period_s;
+        vTaskDelay(pdMS_TO_TICKS(p * 1000UL));
+        if (mqtt_mgr_is_connected()) publish_all_states();
+    }
+}
+
+esp_err_t ha_discovery_start(void) {
+    mqtt_mgr_set_callbacks(on_connected, on_message);
+    if (settings_get()->mqtt_host[0] == '\0') return ESP_OK;
+    pulse_counter_set_callback(on_pulse, NULL);
+    ota_update_set_state_cb(on_ota_state);
+    return xTaskCreate(ha_task, "ha", 5120, NULL, 3, NULL) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
+}
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\ha_discovery\CMakeLists.txt 
+================================================== 
+ 
+idf_component_register(SRCS "ha_discovery.c"
+                       INCLUDE_DIRS "include"
+                       REQUIRES mqtt_mgr settings pzem004t pulse_counter wifi_mgr ntp_sync ota_update esp_timer esp_hw_support freertos)
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\ha_discovery\include\ha_discovery.h 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#pragma once
+#include "esp_err.h"
+
+/* Discovery для Home Assistant, публикация состояний и обработка команд (number).
+   Вызвать один раз при старте, до mqtt_mgr_start(). Без MQTT (пустой mqtt_host) ничего не публикует.
+   Топики: <mqtt_topic>/<номер чипа>/<id>/{state|set|attributes}.
+   Основной сенсор канала - CHANNEL_ENTITIES[0] (энергия), остальные записи - его атрибуты;
+   число импульсов (атрибут "imp", retained) используется для восстановления счётчиков.
+   Кнопка "Firmware update" (<base>/ota/set = PRESS) запускает сервер обновления (ota_update). */
+esp_err_t ha_discovery_start(void);
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\ha_discovery\include\resources.h 
+================================================== 
+ 
+// Copyright 2023 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#pragma once
+
+#define MQTT_PARAM_COUNT 8
+#define CHANNEL_COUNT 2
+
+static const char s_sensor[]    = "sensor";
+static const char s_number[]    = "number";
+// class
+static const char c_total[]         = "total";
+static const char c_total_inc[]     = "total_increasing";
+static const char c_measurement[]   = "measurement";
+// device
+static const char d_current[]   = "current";
+static const char d_energy[]    = "energy";
+static const char d_power[]     = "power";
+static const char d_rpower[]    = "reactive_power";
+static const char d_pf[]        = "power_factor";
+static const char d_voltage[]   = "voltage";
+static const char d_freq[]      = "frequency";
+static const char d_rssi[]      = "signal_strength";
+static const char d_timestamp[] = "timestamp";
+static const char d_duration[]  = "duration";
+// names & units
+static const char n_voltage[]   = "Voltage";
+static const char u_voltage[]   = "V";
+static const char n_current[]   = "Current";
+static const char u_current[]   = "A";
+static const char n_power[]     = "Power";
+static const char u_power[]     = "W";
+static const char n_freq[]      = "Frequency";
+static const char u_freq[]      = "Hz";
+static const char n_pf[]        = "Power factor";
+static const char u_pf[]        = "";
+static const char n_energy[]    = "Energy";
+static const char u_energy[]    = "kWh";
+static const char n_rssi[]      = "RSSI";
+static const char u_rssi[]      = "dBm";
+static const char n_time[]      = "Last seen";
+static const char n_mac[]       = "MAC Address";
+static const char n_chip[]      = "Chip";
+static const char n_e1[]        = "Set energy E1";
+static const char u_e1[]        = "kWh";
+static const char n_e2[]        = "Set energy E2";
+static const char u_e2[]        = "kWh";
+static const char n_e0[]        = "PZEM energy offset";
+static const char u_e0[]        = "kWh";
+static const char n_constant[]  = "Meter constant";
+static const char u_constant[]  = "imp/kWh";
+static const char n_mqtt_per[]  = "MQTT send period";
+static const char n_stat_per[]  = "Stat send period";
+static const char u_sec[]       = "s";
+static const char n_imp[]       = "Impulses";
+static const char u_imp[]       = "imp";
+static const char n_ip[]        = "IP Address";
+static const char n_total[]     = "Total";
+// ids
+static const char i_voltage[]   = "voltage";
+static const char i_current[]   = "current";
+static const char i_power[]     = "power";
+static const char i_freq[]      = "frequency";
+static const char i_pf[]        = "pf";
+static const char i_energy[]    = "energy";
+static const char i_rssi[]      = "rssi";
+static const char i_time[]      = "timestamp";
+static const char i_mac[]       = "mac";
+static const char i_chip[]      = "chip_id";
+static const char i_e1[]        = "set_energy1";
+static const char i_e2[]        = "set_energy2";
+static const char i_e0[]        = "energy_offset";
+static const char i_mqtt_per[]  = "mqtt_period";
+static const char i_stat_per[]  = "stat_period";
+static const char i_energy0[]   = "energy0";
+static const char i_constant[]  = "constant";
+static const char i_imp0[]      = "imp0";
+static const char i_ip[]        = "ip";
+// category
+static const char cat_diag[] = "diagnostic";
+static const char cat_conf[] = "config";
+// icons
+static const char icon_counter[]    = "mdi:counter";
+static const char icon_current[]    = "mdi:current-ac";
+static const char icon_freq[]       = "mdi:sine-wave";
+static const char icon_power[]      = "mdi:power-plug-outline";
+static const char icon_energy[]     = "mdi:counter";
+static const char icon_pf[]         = "mdi:percent-box-outline";
+static const char icon_rssi[]       = "mdi:wifi";
+static const char icon_period[]     = "mdi:timer-cog-outline";
+static const char icon_last_seen[]  = "mdi:clock-outline";
+static const char icon_voltage[]    = "mdi:flash-outline";
+static const char icon_constant[]   = "mdi:calculator";
+
+static const char *const GENERAL_ENTITIES[][MQTT_PARAM_COUNT] = {
+    // type,    name,       sensor_id,  state_class,    dev_class,   unit,       cat,       icon
+    // single sensors (ip, mac и chip_id - атрибуты сенсора RSSI, отдельных сущностей нет)
+    {s_sensor,  n_voltage,  i_voltage,  c_measurement,  d_voltage,   u_voltage,  "",        icon_voltage},
+    {s_sensor,  n_current,  i_current,  c_measurement,  d_current,   u_current,  "",        icon_current},
+    {s_sensor,  n_power,    i_power,    c_measurement,  d_power,     u_power,    "",        icon_power},
+    {s_sensor,  n_freq,     i_freq,     c_measurement,  d_freq,      u_freq,     "",        icon_freq},
+    {s_sensor,  n_pf,       i_pf,       c_measurement,  d_pf,        u_pf,       "",        icon_pf},
+    {s_sensor,  n_energy,   i_energy,   c_total_inc,    d_energy,    u_energy,   "",        icon_energy},
+    {s_sensor,  n_time,     i_time,     "",             d_timestamp, "",         cat_diag,  icon_last_seen},
+    {s_number,  n_e1,       i_e1,       "",             "",          u_e1,       cat_conf,  icon_counter},
+    {s_number,  n_e2,       i_e2,       "",             "",          u_e2,       cat_conf,  icon_counter},
+    {s_number,  n_e0,       i_e0,       "",             "",          u_e0,       cat_conf,  icon_counter},
+    {s_number,  n_constant, i_constant, "",             "",          u_constant, cat_conf,  icon_constant},
+    {s_number,  n_mqtt_per, i_mqtt_per, "",             d_duration,  u_sec,     cat_conf,  icon_period},
+    {s_number,  n_stat_per, i_stat_per, "",             d_duration,  u_sec,      cat_conf,  icon_period},
+    {s_sensor,  n_rssi,     i_rssi,     c_measurement,  d_rssi,      u_rssi,     cat_diag,  icon_rssi},
+};
+
+static const char *const CHANNEL_ENTITIES[][MQTT_PARAM_COUNT] = {
+    // type,    name,       sensor_id,  state_class,    dev_class,   unit,       cat,       icon
+    // [0] - основной сенсор канала (энергия, отображение), [1..] - его атрибуты (импульсы - основа учёта)
+    {s_sensor, n_total,     i_energy0,  c_total,        d_energy,    u_energy,   "",        icon_counter},
+    {s_sensor, n_imp,       i_imp0,     c_total_inc,    "",          u_imp,      "",        icon_counter}
+};
+
+static const char s_energy_e1[] = "Energy E1";
+static const char s_energy_e2[] = "Energy E2";
+static const char *const CHANNEL_NAMES[CHANNEL_COUNT] = {s_energy_e1, s_energy_e2};
+
+static const char s_classic[]   = "Classic";
+static const char s_mod[]       = "Lite";
+static const char *const MODEL_NAMES[] = {s_classic, s_mod};
+
+
+#define GENERAL_ENTITY_COUNT (sizeof(GENERAL_ENTITIES) / sizeof(GENERAL_ENTITIES[0]))
+#define CHANNEL_ENTITY_COUNT (sizeof(CHANNEL_ENTITIES) / sizeof(CHANNEL_ENTITIES[0]))
+
+/* Границы number-сущностей (без min/max HA использует 1..100). Ключ - sensor_id.
+   Энергия (кВт*ч) везде с точностью 2 знака: шаг 0.01. */
+typedef struct {
+    const char *id;
+    float min, max, step;
+} number_limits_t;
+
+static const number_limits_t NUMBER_LIMITS[] = {
+    {"set_energy1",   0, 10000000, 0.01f},
+    {"set_energy2",   0, 10000000, 0.01f},
+    {"energy_offset", -10000000, 10000000, 0.01f},  /* коррекция показаний PZEM, может быть < 0 */
+    {"constant",      1, 1000000, 1},
+    {"mqtt_period",   60, 3600, 1},     /* pzem_period_s */
+    {"stat_period",   60, 86400, 1},    /* stats_period_s */
+};
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\mqtt_mgr\mqtt_mgr.c 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#include "mqtt_mgr.h"
+#include <stdio.h>
+#include <string.h>
+#include "mqtt_client.h"
+#include "esp_log.h"
+#include "esp_mac.h"
+#include "settings.h"
+
+static const char *TAG = "mqtt";
+
+#define MQTT_RX_MAX 96
+
+static esp_mqtt_client_handle_t s_client;
+static volatile bool s_connected;
+static char s_chip[8];
+static char s_base[128];
+static char s_old_base[128];
+static char s_status[160];
+static mqtt_mgr_connected_cb_t s_on_connected;
+static mqtt_mgr_message_cb_t s_on_message;
+
+void mqtt_mgr_set_callbacks(mqtt_mgr_connected_cb_t on_connected, mqtt_mgr_message_cb_t on_message) {
+    s_on_connected = on_connected;
+    s_on_message = on_message;
+}
+
+/* префикс из настроек без хвостовых '/' */
+static size_t get_prefix(char *prefix, size_t n) {
+    strlcpy(prefix, settings_get()->mqtt_topic, n);
+    size_t l = strlen(prefix);
+    while (l > 0 && prefix[l - 1] == '/') prefix[--l] = '\0';
+    return l;
+}
+
+const char *mqtt_mgr_chip_id(void) {
+    if (s_chip[0] == '\0') {
+        uint8_t mac[6];
+        esp_read_mac(mac, ESP_MAC_WIFI_STA);
+        snprintf(s_chip, sizeof(s_chip), "%02X%02X%02X", mac[3], mac[4], mac[5]);
+    }
+    return s_chip;
+}
+
+const char *mqtt_mgr_base_topic(void) {
+    if (s_base[0] == '\0') {
+        char prefix[MQTT_TOPIC_LEN];
+        if (get_prefix(prefix, sizeof(prefix))) {
+            snprintf(s_base, sizeof(s_base), "%s/%s", prefix, mqtt_mgr_chip_id());
+        } else {
+            snprintf(s_base, sizeof(s_base), "%s", mqtt_mgr_chip_id());
+        }
+    }
+    return s_base;
+}
+
+const char *mqtt_mgr_old_base_topic(void) {
+    if (s_old_base[0] == '\0') {
+        char prefix[MQTT_TOPIC_LEN];
+        const char *host = settings_get()->hostname;
+        if (get_prefix(prefix, sizeof(prefix))) {
+            snprintf(s_old_base, sizeof(s_old_base), "%s/%s", prefix, host);
+        } else {
+            snprintf(s_old_base, sizeof(s_old_base), "%s", host);
+        }
+    }
+    return s_old_base;
+}
+
+bool mqtt_mgr_is_connected(void) {
+    return s_client && s_connected;
+}
+
+int mqtt_mgr_publish(const char *topic, const char *payload, int qos, bool retain) {
+    if (!mqtt_mgr_is_connected()) return -1;
+    return esp_mqtt_client_publish(s_client, topic, payload, 0, qos, retain ? 1 : 0);
+}
+
+int mqtt_mgr_subscribe(const char *topic, int qos) {
+    if (!mqtt_mgr_is_connected()) return -1;
+    return esp_mqtt_client_subscribe(s_client, topic, qos);
+}
+
+static void event_handler(void *arg, esp_event_base_t base, int32_t id, void *data) {
+    esp_mqtt_event_handle_t ev = data;
+    switch ((esp_mqtt_event_id_t)id) {
+    case MQTT_EVENT_CONNECTED:
+        s_connected = true;
+        ESP_LOGI(TAG, "connected, base topic %s", mqtt_mgr_base_topic());
+        mqtt_mgr_publish(s_status, "online", 1, true);
+        if (s_on_connected) s_on_connected();
+        break;
+    case MQTT_EVENT_DISCONNECTED:
+        s_connected = false;
+        ESP_LOGW(TAG, "disconnected");
+        break;
+    case MQTT_EVENT_DATA: {
+        /* принимаем только короткие неразбитые сообщения */
+        if (ev->current_data_offset != 0 || ev->data_len != ev->total_data_len) break;
+        char topic[192];
+        char payload[MQTT_RX_MAX];
+        if (ev->topic_len <= 0 || ev->topic_len >= (int)sizeof(topic) || ev->data_len >= MQTT_RX_MAX) break;
+        memcpy(topic, ev->topic, (size_t)ev->topic_len);
+        topic[ev->topic_len] = '\0';
+        memcpy(payload, ev->data, (size_t)ev->data_len);
+        payload[ev->data_len] = '\0';
+        if (s_on_message) s_on_message(topic, payload, ev->data_len);
+        break;
+    }
+    case MQTT_EVENT_ERROR:
+        ESP_LOGW(TAG, "mqtt error");
+        break;
+    default:
+        break;
+    }
+}
+
+esp_err_t mqtt_mgr_start(void) {
+    if (s_client) return ESP_OK;
+    const settings_t *c = settings_get();
+    if (c->mqtt_host[0] == '\0') {
+        ESP_LOGI(TAG, "mqtt_host is empty, MQTT disabled");
+        return ESP_OK;
+    }
+    snprintf(s_status, sizeof(s_status), "%s/status", mqtt_mgr_base_topic());
+
+    esp_mqtt_client_config_t cfg = {
+        .broker.address.hostname = c->mqtt_host,
+        .broker.address.port = c->mqtt_port,
+        .broker.address.transport = MQTT_TRANSPORT_OVER_TCP,
+        .credentials.client_id = c->hostname,
+        .credentials.username = c->mqtt_user[0] ? c->mqtt_user : NULL,
+        .credentials.authentication.password = c->mqtt_pass[0] ? c->mqtt_pass : NULL,
+        .session.keepalive = 60,
+        .session.last_will.topic = s_status,
+        .session.last_will.msg = "offline",
+        .session.last_will.qos = 1,
+        .session.last_will.retain = 1,
+        .network.reconnect_timeout_ms = 10000,
+        .task.stack_size = 8192,
+        .buffer.size = 1536,
+    };
+    s_client = esp_mqtt_client_init(&cfg);
+    if (!s_client) return ESP_FAIL;
+    esp_mqtt_client_register_event(s_client, ESP_EVENT_ANY_ID, event_handler, NULL);
+    esp_err_t e = esp_mqtt_client_start(s_client);
+    if (e != ESP_OK) {
+        ESP_LOGE(TAG, "start failed: %s", esp_err_to_name(e));
+        esp_mqtt_client_destroy(s_client);
+        s_client = NULL;
+        return e;
+    }
+    ESP_LOGI(TAG, "connecting to %s:%u", c->mqtt_host, (unsigned)c->mqtt_port);
+    return ESP_OK;
+}
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\mqtt_mgr\CMakeLists.txt 
+================================================== 
+ 
+# Имя mqtt_mgr, а не mqtt: компонент "mqtt" уже есть в ESP-IDF
+idf_component_register(SRCS "mqtt_mgr.c"
+                       INCLUDE_DIRS "include"
+                       REQUIRES mqtt esp_event settings esp_hw_support)
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\mqtt_mgr\include\mqtt_mgr.h 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#pragma once
+#include <stdbool.h>
+#include "esp_err.h"
+
+/* Тонкая обёртка над esp-mqtt. Пустой mqtt_host в настройках = MQTT выключен.
+   Иерархия топиков: <mqtt_topic>/<номер чипа>/..., где номер чипа - последние 3 байта MAC (6 hex-символов, как сенсор chip_id).
+   Статус (LWT): <base>/status = online/offline */
+
+typedef void (*mqtt_mgr_connected_cb_t)(void);
+/* topic и data - копии с завершающим нулём, живут только во время вызова */
+typedef void (*mqtt_mgr_message_cb_t)(const char *topic, const char *data, int len);
+
+/* Регистрировать до mqtt_mgr_start() */
+void mqtt_mgr_set_callbacks(mqtt_mgr_connected_cb_t on_connected, mqtt_mgr_message_cb_t on_message);
+
+/* Запускает клиент (один раз; повторные вызовы игнорируются). Вызывать после получения IP. */
+esp_err_t mqtt_mgr_start(void);
+
+bool mqtt_mgr_is_connected(void);
+
+/* Базовый топик устройства: <mqtt_topic>/<номер чипа> */
+const char *mqtt_mgr_base_topic(void);
+/* Номер чипа: 6 hex-символов (MAC[3..5]) */
+const char *mqtt_mgr_chip_id(void);
+/* Прежний базовый топик <mqtt_topic>/<hostname> - только для миграции данных */
+const char *mqtt_mgr_old_base_topic(void);
+
+/* Возвращает id сообщения (>=0) или -1, если нет соединения */
+int mqtt_mgr_publish(const char *topic, const char *payload, int qos, bool retain);
+int mqtt_mgr_subscribe(const char *topic, int qos);
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\ntp_sync\ntp_sync.c 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#include "ntp_sync.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/time.h>
+#include "esp_netif_sntp.h"
+#include "esp_sntp.h"
+#include "esp_log.h"
+#include "settings.h"
+
+static const char *TAG = "ntp";
+
+static bool s_init;
+static volatile bool s_synced;
+static volatile time_t s_last;
+
+static void on_sync(struct timeval *tv) {
+    s_last = tv->tv_sec;
+    s_synced = true;
+    struct tm tm;
+    char buf[32];
+    localtime_r(&tv->tv_sec, &tm);
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
+    ESP_LOGI(TAG, "time synchronized: %s", buf);
+}
+
+void ntp_sync_init(void) {
+    int tz = settings_get()->tz;
+    char buf[16];
+    /* В POSIX-формате знак смещения обратный: UTC+3 записывается как "UTC-3" */
+    snprintf(buf, sizeof(buf), "UTC%+d", -tz);
+    setenv("TZ", buf, 1);
+    tzset();
+    ESP_LOGI(TAG, "timezone set: %s", buf);
+}
+
+void ntp_sync_on_wifi_connected(void) {
+    const char *srv = settings_get()->ntp_server;
+    if (srv[0] == '\0') {
+        ESP_LOGW(TAG, "NTP server not configured, skipping");
+        return;
+    }
+    if (!s_init) {
+        esp_sntp_config_t cfg = ESP_NETIF_SNTP_DEFAULT_CONFIG(srv);
+        cfg.start = false;            /* запускаем явно после подключения */
+        cfg.sync_cb = on_sync;
+        esp_err_t e = esp_netif_sntp_init(&cfg);
+        if (e != ESP_OK) {
+            ESP_LOGE(TAG, "sntp init failed: %s", esp_err_to_name(e));
+            return;
+        }
+        sntp_set_sync_interval(NTP_SYNC_INTERVAL_MS);
+        s_init = true;
+    }
+    if (s_synced && (time(NULL) - s_last) < NTP_MIN_RESYNC_S) {
+        return;                       /* время только что сверено, переподключение не повод для нового запроса */
+    }
+    ESP_LOGI(TAG, "starting SNTP, server %s", srv);
+    esp_netif_sntp_start();
+}
+
+bool ntp_sync_is_synced(void) {
+    return s_synced;
+}
+
+time_t ntp_sync_last_sync(void) {
+    return s_last;
+}
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\ntp_sync\CMakeLists.txt 
+================================================== 
+ 
+idf_component_register(SRCS "ntp_sync.c"
+                       INCLUDE_DIRS "include"
+                       REQUIRES esp_netif lwip esp_event settings)
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\ntp_sync\include\ntp_sync.h 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#pragma once
+#include <stdbool.h>
+#include <time.h>
+#include "esp_err.h"
+
+/* Периодичность повторной сверки времени */
+#define NTP_SYNC_INTERVAL_MS   (24UL * 60 * 60 * 1000)   /* раз в сутки */
+/* Не дергать сервер при частых переподключениях Wi-Fi: если время сверено
+   менее этого числа секунд назад, повторный запрос при подключении пропускается */
+#define NTP_MIN_RESYNC_S       3600
+
+/* Устанавливает часовой пояс из settings (tz, часы от UTC). Сети не требует: вызовите после settings_init(). */
+void ntp_sync_init(void);
+
+/* Вызвать, когда Wi-Fi подключился и получил IP. Первый вызов инициализирует SNTP-клиент
+   (адрес сервера берется из settings), затем время сверяется сразу и далее раз в сутки. */
+void ntp_sync_on_wifi_connected(void);
+
+bool   ntp_sync_is_synced(void);      /* время хотя бы раз сверено */
+time_t ntp_sync_last_sync(void);      /* момент последней сверки (unix), 0 - не было */
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\oled\oled.c 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#include "oled.h"
+#include <string.h>
+#include "driver/i2c_master.h"
+#include "esp_log.h"
+#include "oled_font.h"
+
+static const char *TAG = "oled";
+
+static uint8_t s_fb[OLED_W * OLED_H / 8];
+static i2c_master_bus_handle_t s_bus;
+static i2c_master_dev_handle_t s_dev;
+
+static esp_err_t send_cmds(const uint8_t *c, size_t n) {
+    uint8_t buf[32];
+    if (n > sizeof(buf) - 1) return ESP_ERR_INVALID_SIZE;
+    buf[0] = 0x00;                       /* управляющий байт: далее команды */
+    memcpy(buf + 1, c, n);
+    return i2c_master_transmit(s_dev, buf, n + 1, 100);
+}
+
+esp_err_t oled_init(gpio_num_t sda, gpio_num_t scl, uint8_t addr) {
+    i2c_master_bus_config_t bc = {
+        .i2c_port = I2C_NUM_0,
+        .sda_io_num = sda,
+        .scl_io_num = scl,
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .glitch_ignore_cnt = 7,
+        .flags.enable_internal_pullup = true,
+    };
+    esp_err_t e = i2c_new_master_bus(&bc, &s_bus);
+    if (e != ESP_OK) return e;
+
+    e = i2c_master_probe(s_bus, addr, 100);
+    if (e != ESP_OK) {
+        ESP_LOGE(TAG, "display not found at 0x%02X (check wiring/address)", addr);
+        return e;
+    }
+    i2c_device_config_t dc = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = addr,
+        .scl_speed_hz = 400000,
+    };
+    e = i2c_master_bus_add_device(s_bus, &dc, &s_dev);
+    if (e != ESP_OK) return e;
+
+    const uint8_t init_seq[] = {
+        0xAE,             /* display off */
+        0xD5, 0x80,       /* clock divide */
+        0xA8, 0x3F,       /* multiplex 64 */
+        0xD3, 0x00,       /* display offset */
+        0x40,             /* start line 0 */
+        0x8D, 0x14,       /* charge pump on */
+        0x20, 0x02,       /* page addressing mode */
+#if OLED_ROTATE_180
+        0xA0, 0xC0,
+#else
+        0xA1, 0xC8,
+#endif
+        0xDA, 0x12,       /* COM pins */
+        0x81, 0xCF,       /* contrast */
+        0xD9, 0xF1,       /* pre-charge */
+        0xDB, 0x40,       /* VCOMH */
+        0xA4,             /* follow RAM */
+        0xA6,             /* normal (not inverted) */
+        0xAF,             /* display on */
+    };
+    e = send_cmds(init_seq, sizeof(init_seq));
+    if (e != ESP_OK) return e;
+    oled_clear();
+    return oled_flush();
+}
+
+void oled_clear(void) {
+    memset(s_fb, 0, sizeof(s_fb));
+}
+
+void oled_pixel(int x, int y, bool on) {
+    if (x < 0 || x >= OLED_W || y < 0 || y >= OLED_H) return;
+    uint8_t *p = &s_fb[(y >> 3) * OLED_W + x];
+    if (on) {
+        *p |= (uint8_t)(1u << (y & 7));
+    } else {
+        *p &= (uint8_t)~(1u << (y & 7));
+    }
+}
+
+void oled_fill_rect(int x, int y, int w, int h, bool on) {
+    for (int j = 0; j < h; j++) {
+        for (int i = 0; i < w; i++) {
+            oled_pixel(x + i, y + j, on);
+        }
+    }
+}
+
+static void draw_char(int x, int y, char ch, int scale) {
+    if (ch < 32 || ch > 126) ch = '?';
+    const uint8_t *g = FONT5X7[ch - 32];
+    for (int col = 0; col < 5; col++) {
+        for (int row = 0; row < 7; row++) {
+            if (g[col] & (1u << row)) {
+                oled_fill_rect(x + col * scale, y + row * scale, scale, scale, true);
+            }
+        }
+    }
+}
+
+void oled_text(int x, int y, const char *s, int scale) {
+    if (scale < 1) scale = 1;
+    for (; *s; s++) {
+        draw_char(x, y, *s, scale);
+        x += 6 * scale;
+    }
+}
+
+int oled_text_width(const char *s, int scale) {
+    return (int)strlen(s) * 6 * (scale < 1 ? 1 : scale);
+}
+
+esp_err_t oled_flush(void) {
+    for (int p = 0; p < OLED_H / 8; p++) {
+        const uint8_t pos[3] = { (uint8_t)(0xB0 | p), 0x00, 0x10 };
+        esp_err_t e = send_cmds(pos, sizeof(pos));
+        if (e != ESP_OK) return e;
+        uint8_t d[1 + OLED_W];
+        d[0] = 0x40;                     /* управляющий байт: далее данные */
+        memcpy(d + 1, &s_fb[p * OLED_W], OLED_W);
+        e = i2c_master_transmit(s_dev, d, sizeof(d), 100);
+        if (e != ESP_OK) return e;
+    }
+    return ESP_OK;
+}
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\oled\oled_font.h 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#pragma once
+#include <stdint.h>
+
+/* Шрифт 5x7, ASCII 32..126, 5 колонок на символ, младший бит - верхний пиксель */
+static const uint8_t FONT5X7[95][5] = {
+    {0x00, 0x00, 0x00, 0x00, 0x00},
+    {0x00, 0x00, 0x5F, 0x00, 0x00},
+    {0x00, 0x07, 0x00, 0x07, 0x00},
+    {0x14, 0x7F, 0x14, 0x7F, 0x14},
+    {0x24, 0x2A, 0x7F, 0x2A, 0x12},
+    {0x23, 0x13, 0x08, 0x64, 0x62},
+    {0x36, 0x49, 0x56, 0x20, 0x50},
+    {0x00, 0x05, 0x03, 0x00, 0x00},
+    {0x00, 0x1C, 0x22, 0x41, 0x00},
+    {0x00, 0x41, 0x22, 0x1C, 0x00},
+    {0x14, 0x08, 0x3E, 0x08, 0x14},
+    {0x08, 0x08, 0x3E, 0x08, 0x08},
+    {0x00, 0x50, 0x30, 0x00, 0x00},
+    {0x08, 0x08, 0x08, 0x08, 0x08},
+    {0x00, 0x60, 0x60, 0x00, 0x00},
+    {0x20, 0x10, 0x08, 0x04, 0x02},
+    {0x3E, 0x51, 0x49, 0x45, 0x3E},
+    {0x00, 0x42, 0x7F, 0x40, 0x00},
+    {0x42, 0x61, 0x51, 0x49, 0x46},
+    {0x21, 0x41, 0x45, 0x4B, 0x31},
+    {0x18, 0x14, 0x12, 0x7F, 0x10},
+    {0x27, 0x45, 0x45, 0x45, 0x39},
+    {0x3C, 0x4A, 0x49, 0x49, 0x30},
+    {0x01, 0x71, 0x09, 0x05, 0x03},
+    {0x36, 0x49, 0x49, 0x49, 0x36},
+    {0x06, 0x49, 0x49, 0x29, 0x1E},
+    {0x00, 0x36, 0x36, 0x00, 0x00},
+    {0x00, 0x56, 0x36, 0x00, 0x00},
+    {0x08, 0x14, 0x22, 0x41, 0x00},
+    {0x14, 0x14, 0x14, 0x14, 0x14},
+    {0x00, 0x41, 0x22, 0x14, 0x08},
+    {0x02, 0x01, 0x51, 0x09, 0x06},
+    {0x32, 0x49, 0x79, 0x41, 0x3E},
+    {0x7E, 0x11, 0x11, 0x11, 0x7E},
+    {0x7F, 0x49, 0x49, 0x49, 0x36},
+    {0x3E, 0x41, 0x41, 0x41, 0x22},
+    {0x7F, 0x41, 0x41, 0x22, 0x1C},
+    {0x7F, 0x49, 0x49, 0x49, 0x41},
+    {0x7F, 0x09, 0x09, 0x09, 0x01},
+    {0x3E, 0x41, 0x49, 0x49, 0x7A},
+    {0x7F, 0x08, 0x08, 0x08, 0x7F},
+    {0x00, 0x41, 0x7F, 0x41, 0x00},
+    {0x20, 0x40, 0x41, 0x3F, 0x01},
+    {0x7F, 0x08, 0x14, 0x22, 0x41},
+    {0x7F, 0x40, 0x40, 0x40, 0x40},
+    {0x7F, 0x02, 0x0C, 0x02, 0x7F},
+    {0x7F, 0x04, 0x08, 0x10, 0x7F},
+    {0x3E, 0x41, 0x41, 0x41, 0x3E},
+    {0x7F, 0x09, 0x09, 0x09, 0x06},
+    {0x3E, 0x41, 0x51, 0x21, 0x5E},
+    {0x7F, 0x09, 0x19, 0x29, 0x46},
+    {0x46, 0x49, 0x49, 0x49, 0x31},
+    {0x01, 0x01, 0x7F, 0x01, 0x01},
+    {0x3F, 0x40, 0x40, 0x40, 0x3F},
+    {0x1F, 0x20, 0x40, 0x20, 0x1F},
+    {0x3F, 0x40, 0x38, 0x40, 0x3F},
+    {0x63, 0x14, 0x08, 0x14, 0x63},
+    {0x07, 0x08, 0x70, 0x08, 0x07},
+    {0x61, 0x51, 0x49, 0x45, 0x43},
+    {0x00, 0x7F, 0x41, 0x41, 0x00},
+    {0x02, 0x04, 0x08, 0x10, 0x20},
+    {0x00, 0x41, 0x41, 0x7F, 0x00},
+    {0x04, 0x02, 0x01, 0x02, 0x04},
+    {0x40, 0x40, 0x40, 0x40, 0x40},
+    {0x00, 0x01, 0x02, 0x04, 0x00},
+    {0x20, 0x54, 0x54, 0x54, 0x78},
+    {0x7F, 0x48, 0x44, 0x44, 0x38},
+    {0x38, 0x44, 0x44, 0x44, 0x20},
+    {0x38, 0x44, 0x44, 0x48, 0x7F},
+    {0x38, 0x54, 0x54, 0x54, 0x18},
+    {0x08, 0x7E, 0x09, 0x01, 0x02},
+    {0x0C, 0x52, 0x52, 0x52, 0x3E},
+    {0x7F, 0x08, 0x04, 0x04, 0x78},
+    {0x00, 0x44, 0x7D, 0x40, 0x00},
+    {0x20, 0x40, 0x44, 0x3D, 0x00},
+    {0x7F, 0x10, 0x28, 0x44, 0x00},
+    {0x00, 0x41, 0x7F, 0x40, 0x00},
+    {0x7C, 0x04, 0x18, 0x04, 0x78},
+    {0x7C, 0x08, 0x04, 0x04, 0x78},
+    {0x38, 0x44, 0x44, 0x44, 0x38},
+    {0x7C, 0x14, 0x14, 0x14, 0x08},
+    {0x08, 0x14, 0x14, 0x18, 0x7C},
+    {0x7C, 0x08, 0x04, 0x04, 0x08},
+    {0x48, 0x54, 0x54, 0x54, 0x20},
+    {0x04, 0x3F, 0x44, 0x40, 0x20},
+    {0x3C, 0x40, 0x40, 0x20, 0x7C},
+    {0x1C, 0x20, 0x40, 0x20, 0x1C},
+    {0x3C, 0x40, 0x30, 0x40, 0x3C},
+    {0x44, 0x28, 0x10, 0x28, 0x44},
+    {0x0C, 0x50, 0x50, 0x50, 0x3C},
+    {0x44, 0x64, 0x54, 0x4C, 0x44},
+    {0x00, 0x08, 0x36, 0x41, 0x00},
+    {0x00, 0x00, 0x7F, 0x00, 0x00},
+    {0x00, 0x41, 0x36, 0x08, 0x00},
+    {0x10, 0x08, 0x08, 0x10, 0x08}
+};
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\oled\CMakeLists.txt 
+================================================== 
+ 
+idf_component_register(SRCS "oled.c"
+                       INCLUDE_DIRS "include"
+                       REQUIRES esp_driver_i2c esp_driver_gpio)
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\oled\include\oled.h 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#pragma once
+#include <stdbool.h>
+#include <stdint.h>
+#include "esp_err.h"
+#include "driver/gpio.h"
+
+#define OLED_W 128
+#define OLED_H 64
+/* Двухцветный модуль: строки y = 0..15 желтые, y = 16..63 синие */
+#define OLED_YELLOW_H 16
+
+/* 1 - перевернуть изображение на 180 градусов */
+#define OLED_ROTATE_180 0
+
+esp_err_t oled_init(gpio_num_t sda, gpio_num_t scl, uint8_t addr);
+void oled_clear(void);
+void oled_pixel(int x, int y, bool on);
+void oled_fill_rect(int x, int y, int w, int h, bool on);
+/* scale = 1 -> символ 6x8 пикселей (5 + пробел), scale = 2 -> 12x16 */
+void oled_text(int x, int y, const char *s, int scale);
+int  oled_text_width(const char *s, int scale);
+esp_err_t oled_flush(void);
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\ota_update\ota_update.c 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#include "ota_update.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "esp_http_server.h"
+#include "esp_ota_ops.h"
+#include "esp_app_format.h"
+#include "esp_log.h"
+#include "esp_timer.h"
+#include "esp_system.h"
+#include "esp_random.h"
+#include "mbedtls/base64.h"
+
+static const char *TAG = "ota";
+
+#define OTA_RX_CHUNK   4096
+#define OTA_FIRST_READ 512          /* заголовок образа + app_desc лежат в первых 288 байтах */
+#define OTA_RX_IDLE_MAX 6           /* подряд таймаутов приёма (по 10 с) до отмены */
+
+static SemaphoreHandle_t s_lock;
+static httpd_handle_t s_srv;
+static esp_timer_handle_t s_timeout;
+static esp_timer_handle_t s_reboot;
+static ota_update_state_cb_t s_cb;
+static char s_pin[8];
+static char s_auth[48];             /* ожидаемое значение заголовка Authorization */
+static volatile bool s_active;
+static volatile bool s_busy;        /* идёт приём образа */
+static volatile int s_fails;
+
+/* ---------- Страница ---------- */
+
+#define PAGE_HEAD \
+    "<!doctype html><html lang='ru'><meta charset='utf-8'>" \
+    "<meta name='viewport' content='width=device-width,initial-scale=1'><title>Обновление прошивки</title>" \
+    "<style>body{font-family:system-ui,sans-serif;max-width:480px;margin:20px auto;padding:0 12px;color:#1d2733}" \
+    "input,button{width:100%;padding:12px;font-size:1em;margin:8px 0;border-radius:8px;border:1px solid #c5ccd4;box-sizing:border-box}" \
+    "button{background:#b6d1f3;border:0}progress{width:100%;height:18px}.s{color:#5f6368;font-size:.9em}</style>" \
+    "<h2>Обновление прошивки</h2><p class='s'>Сейчас запущено: "
+
+#define PAGE_TAIL \
+    "</p><input type='file' id='f' accept='.bin'>" \
+    "<button id='b' onclick='up()'>Загрузить</button>" \
+    "<progress id='p' value='0' max='100' hidden></progress><p id='m'></p>" \
+    "<script>" \
+    "function up(){var f=document.getElementById('f').files[0],m=document.getElementById('m'),p=document.getElementById('p'),b=document.getElementById('b');" \
+    "if(!f){m.textContent='Выберите файл firmware.bin';return}" \
+    "var x=new XMLHttpRequest();x.open('POST','/update');b.disabled=true;p.hidden=false;m.textContent='';" \
+    "x.upload.onprogress=function(e){if(e.lengthComputable)p.value=100*e.loaded/e.total};" \
+    "x.onload=function(){if(x.status==200){p.value=100;m.textContent='Готово, устройство перезагружается...'}" \
+    "else{b.disabled=false;m.textContent='Ошибка: '+x.responseText}};" \
+    "x.onerror=function(){b.disabled=false;m.textContent='Связь прервана'};" \
+    "x.send(f)}" \
+    "</script></html>"
+
+/* ---------- Авторизация ---------- */
+
+static bool check_auth(httpd_req_t *r) {
+    char hdr[80];
+    if (httpd_req_get_hdr_value_str(r, "Authorization", hdr, sizeof(hdr)) == ESP_OK) {
+        size_t n = strlen(s_auth);
+        unsigned diff = (strlen(hdr) != n);
+        for (size_t i = 0; i < n && hdr[i]; i++) diff |= (unsigned)(hdr[i] ^ s_auth[i]);   /* без раннего выхода */
+        if (!diff) return true;
+    }
+    if (++s_fails >= OTA_MAX_AUTH_FAILS) {
+        ESP_LOGW(TAG, "too many auth failures, stopping");
+        esp_timer_stop(s_timeout);
+        esp_timer_start_once(s_timeout, 200 * 1000);        /* остановим из таймера: из обработчика httpd_stop нельзя */
+    }
+    httpd_resp_set_status(r, "401 Unauthorized");
+    httpd_resp_set_hdr(r, "WWW-Authenticate", "Basic realm=\"eMeter32 OTA\"");
+    httpd_resp_set_type(r, "text/plain; charset=utf-8");
+    httpd_resp_sendstr(r, "Нужен PIN");
+    return false;
+}
+
+static esp_err_t page_get(httpd_req_t *r) {
+    if (!check_auth(r)) return ESP_OK;
+    s_fails = 0;
+    const esp_partition_t *run = esp_ota_get_running_partition();
+    esp_app_desc_t d;
+    char info[96] = "";
+    if (run && esp_ota_get_partition_description(run, &d) == ESP_OK) {
+        snprintf(info, sizeof(info), "%.31s %.31s (раздел %s)", d.project_name, d.version, run->label);
+    }
+    httpd_resp_set_type(r, "text/html; charset=utf-8");
+    httpd_resp_sendstr_chunk(r, PAGE_HEAD);
+    httpd_resp_sendstr_chunk(r, info);
+    httpd_resp_sendstr_chunk(r, PAGE_TAIL);
+    return httpd_resp_sendstr_chunk(r, NULL);
+}
+
+/* ---------- Приём образа ---------- */
+
+static esp_err_t fail(httpd_req_t *r, const char *status, const char *msg) {
+    httpd_resp_set_status(r, status);
+    httpd_resp_set_type(r, "text/plain; charset=utf-8");
+    return httpd_resp_sendstr(r, msg);
+}
+
+/* прочитать ровно len байт; 0 = успех */
+static int recv_full(httpd_req_t *r, char *buf, size_t len) {
+    size_t got = 0;
+    int idle = 0;
+    while (got < len) {
+        int n = httpd_req_recv(r, buf + got, len - got);
+        if (n == HTTPD_SOCK_ERR_TIMEOUT) {
+            if (++idle >= OTA_RX_IDLE_MAX) return -1;
+            continue;
+        }
+        if (n <= 0) return -1;
+        idle = 0;
+        got += (size_t)n;
+    }
+    return 0;
+}
+
+static esp_err_t update_post(httpd_req_t *r) {
+    if (!check_auth(r)) return ESP_OK;
+    s_fails = 0;
+    if (s_busy) return fail(r, "409 Conflict", "Загрузка уже идёт");
+
+    const esp_partition_t *part = esp_ota_get_next_update_partition(NULL);
+    if (!part) return fail(r, "500 Internal Server Error", "Нет раздела для обновления");
+    size_t total = r->content_len;
+    if (total < OTA_FIRST_READ) return fail(r, "400 Bad Request", "Файл слишком мал");
+    if (total > part->size) return fail(r, "413 Payload Too Large", "Файл больше раздела обновления");
+
+    char *buf = malloc(OTA_RX_CHUNK);
+    if (!buf) return fail(r, "500 Internal Server Error", "Не хватает памяти");
+
+    s_busy = true;
+    const char *err = NULL;
+    esp_ota_handle_t h = 0;
+    bool begun = false;
+    size_t got = 0;
+
+    if (recv_full(r, buf, OTA_FIRST_READ) != 0) {
+        err = "Связь прервана";
+    } else {
+        const esp_image_header_t *ih = (const esp_image_header_t *)buf;
+        const esp_app_desc_t *nd = (const esp_app_desc_t *)(buf + sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t));
+        esp_app_desc_t cur;
+        const esp_partition_t *run = esp_ota_get_running_partition();
+        if (ih->magic != ESP_IMAGE_HEADER_MAGIC || nd->magic_word != ESP_APP_DESC_MAGIC_WORD) {
+            err = "Это не образ приложения ESP32 (нужен firmware.bin)";
+        } else if (run && esp_ota_get_partition_description(run, &cur) == ESP_OK &&
+                   strncmp(nd->project_name, cur.project_name, sizeof(nd->project_name)) != 0) {
+            err = "Образ от другого проекта";
+        } else {
+            ESP_LOGI(TAG, "receiving %s %s, %u bytes -> %s", nd->project_name, nd->version, (unsigned)total, part->label);
+            if (esp_ota_begin(part, OTA_WITH_SEQUENTIAL_WRITES, &h) != ESP_OK) {
+                err = "Не удалось начать запись";
+            } else {
+                begun = true;
+                if (esp_ota_write(h, buf, OTA_FIRST_READ) != ESP_OK) err = "Ошибка записи во flash";
+                got = OTA_FIRST_READ;
+            }
+        }
+    }
+
+    int idle = 0;
+    while (!err && got < total) {
+        size_t want = total - got < OTA_RX_CHUNK ? total - got : OTA_RX_CHUNK;
+        int n = httpd_req_recv(r, buf, want);
+        if (n == HTTPD_SOCK_ERR_TIMEOUT) {
+            if (++idle >= OTA_RX_IDLE_MAX) err = "Таймаут приёма";
+            continue;
+        }
+        if (n <= 0) { err = "Связь прервана"; break; }
+        idle = 0;
+        if (esp_ota_write(h, buf, (size_t)n) != ESP_OK) { err = "Ошибка записи во flash"; break; }
+        got += (size_t)n;
+    }
+
+    if (begun) {
+        if (err) {
+            esp_ota_abort(h);
+        } else {
+            esp_err_t e = esp_ota_end(h);            /* проверяет целостность образа */
+            if (e != ESP_OK) {
+                err = "Образ повреждён";
+                ESP_LOGW(TAG, "esp_ota_end: %s", esp_err_to_name(e));
+            } else if (esp_ota_set_boot_partition(part) != ESP_OK) {
+                err = "Не удалось выбрать новый раздел для загрузки";
+            }
+        }
+    }
+    free(buf);
+    s_busy = false;
+
+    if (err) {
+        ESP_LOGW(TAG, "update failed: %s", err);
+        return fail(r, "400 Bad Request", err);
+    }
+    ESP_LOGI(TAG, "update OK, rebooting");
+    httpd_resp_set_type(r, "text/plain; charset=utf-8");
+    httpd_resp_sendstr(r, "OK");
+    esp_timer_start_once(s_reboot, 1500 * 1000);
+    return ESP_OK;
+}
+
+/* ---------- Запуск и остановка ---------- */
+
+static void notify(void) {
+    if (s_cb) s_cb(s_active);
+}
+
+static void do_stop(void) {
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    if (!s_active) { xSemaphoreGive(s_lock); return; }
+    esp_timer_stop(s_timeout);
+    httpd_stop(s_srv);
+    s_srv = NULL;
+    s_active = false;
+    s_pin[0] = '\0';
+    s_auth[0] = '\0';
+    xSemaphoreGive(s_lock);
+    ESP_LOGI(TAG, "server stopped");
+    notify();
+}
+
+static void timeout_cb(void *arg) {
+    if (s_busy) {                                   /* не обрываем идущую загрузку */
+        esp_timer_start_once(s_timeout, 30ULL * 1000000ULL);
+        return;
+    }
+    do_stop();
+}
+
+static void reboot_cb(void *arg) {
+    esp_restart();
+}
+
+void ota_update_init(void) {
+    s_lock = xSemaphoreCreateMutex();
+    const esp_timer_create_args_t t1 = { .callback = timeout_cb, .name = "ota_to" };
+    const esp_timer_create_args_t t2 = { .callback = reboot_cb, .name = "ota_rb" };
+    esp_timer_create(&t1, &s_timeout);
+    esp_timer_create(&t2, &s_reboot);
+    const esp_partition_t *run = esp_ota_get_running_partition();
+    if (run) ESP_LOGI(TAG, "running from %s", run->label);
+}
+
+void ota_update_set_state_cb(ota_update_state_cb_t cb) {
+    s_cb = cb;
+}
+
+bool ota_update_is_active(void) { return s_active; }
+const char *ota_update_pin(void) { return s_pin; }
+
+esp_err_t ota_update_start(void) {
+    if (!s_lock) return ESP_ERR_INVALID_STATE;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    if (s_active) {                                 /* повторная команда продлевает сеанс */
+        esp_timer_stop(s_timeout);
+        esp_timer_start_once(s_timeout, (uint64_t)OTA_SERVER_TIMEOUT_S * 1000000ULL);
+        xSemaphoreGive(s_lock);
+        notify();
+        return ESP_OK;
+    }
+
+    snprintf(s_pin, sizeof(s_pin), "%06u", (unsigned)(esp_random() % 1000000U));
+    char cred[24], b64[32];
+    size_t olen = 0;
+    snprintf(cred, sizeof(cred), "%s:%s", OTA_USER, s_pin);
+    if (mbedtls_base64_encode((unsigned char *)b64, sizeof(b64) - 1, &olen, (const unsigned char *)cred, strlen(cred)) != 0) {
+        s_pin[0] = '\0';
+        xSemaphoreGive(s_lock);
+        return ESP_FAIL;
+    }
+    b64[olen] = '\0';
+    snprintf(s_auth, sizeof(s_auth), "Basic %s", b64);
+    s_fails = 0;
+
+    httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
+    cfg.stack_size = 8192;
+    cfg.max_uri_handlers = 4;
+    cfg.lru_purge_enable = true;
+    cfg.recv_wait_timeout = 10;
+    cfg.send_wait_timeout = 10;
+    esp_err_t e = httpd_start(&s_srv, &cfg);
+    if (e != ESP_OK) {
+        ESP_LOGE(TAG, "httpd_start failed: %s", esp_err_to_name(e));
+        s_srv = NULL;
+        s_pin[0] = '\0';
+        s_auth[0] = '\0';
+        xSemaphoreGive(s_lock);
+        return e;
+    }
+    const httpd_uri_t u_root = { .uri = "/", .method = HTTP_GET, .handler = page_get };
+    const httpd_uri_t u_page = { .uri = "/update", .method = HTTP_GET, .handler = page_get };
+    const httpd_uri_t u_post = { .uri = "/update", .method = HTTP_POST, .handler = update_post };
+    httpd_register_uri_handler(s_srv, &u_root);
+    httpd_register_uri_handler(s_srv, &u_page);
+    httpd_register_uri_handler(s_srv, &u_post);
+
+    s_active = true;
+    esp_timer_start_once(s_timeout, (uint64_t)OTA_SERVER_TIMEOUT_S * 1000000ULL);
+    xSemaphoreGive(s_lock);
+    ESP_LOGI(TAG, "server started: /update, user '%s', PIN %s, %d s", OTA_USER, s_pin, OTA_SERVER_TIMEOUT_S);
+    notify();
+    return ESP_OK;
+}
+
+void ota_update_stop(void) {
+    if (!s_lock || s_busy) return;
+    do_stop();
+}
+
+void ota_update_mark_valid(void) {
+    static bool done;
+    if (done) return;
+    done = true;
+    const esp_partition_t *run = esp_ota_get_running_partition();
+    esp_ota_img_states_t st;
+    if (run && esp_ota_get_state_partition(run, &st) == ESP_OK && st == ESP_OTA_IMG_PENDING_VERIFY) {
+        if (esp_ota_mark_app_valid_cancel_rollback() == ESP_OK) ESP_LOGI(TAG, "new firmware confirmed");
+    }
+}
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\ota_update\CMakeLists.txt 
+================================================== 
+ 
+idf_component_register(SRCS "ota_update.c"
+                       INCLUDE_DIRS "include"
+                       PRIV_REQUIRES esp_http_server app_update esp_app_format esp_timer esp_system esp_hw_support mbedtls freertos)
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\ota_update\include\ota_update.h 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#pragma once
+#include <stdbool.h>
+#include "esp_err.h"
+
+/* Обновление прошивки по Wi-Fi: HTTP-сервер по требованию.
+   Сервер запускается командой (кнопка в HA), на ota_update_start(), и сам выключается через OTA_SERVER_TIMEOUT_S.
+   Страница: http://<IP>/update, доступ - Basic-авторизация: логин OTA_USER, пароль - одноразовый PIN (6 цифр),
+   который генерируется при каждом запуске сервера. Загружается app-образ (firmware.bin из .pio/build/<env>/). */
+
+#define OTA_SERVER_TIMEOUT_S 600      /* через сколько секунд бездействия сервер выключается */
+#define OTA_USER             "ota"
+#define OTA_MAX_AUTH_FAILS   5        /* столько неверных паролей - сервер выключается */
+
+/* Вызывается при включении и выключении сервера (из любой задачи) */
+typedef void (*ota_update_state_cb_t)(bool active);
+
+/* Один раз при старте, до остальных вызовов */
+void ota_update_init(void);
+void ota_update_set_state_cb(ota_update_state_cb_t cb);
+
+/* Запустить сервер; если уже работает - продлить таймаут. Нужен IP (STA подключён). */
+esp_err_t ota_update_start(void);
+/* Остановить сервер (не прерывает идущую загрузку) */
+void ota_update_stop(void);
+bool ota_update_is_active(void);
+/* PIN текущего сеанса; пустая строка, если сервер выключен */
+const char *ota_update_pin(void);
+
+/* Подтвердить новую прошивку (отключить откат). Безопасно вызывать многократно и на прошивке, залитой по кабелю. */
+void ota_update_mark_valid(void);
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\pulse_counter\pulse_counter.c 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#include "pulse_counter.h"
+#include <math.h>
+#include <string.h>
+#include "driver/pulse_cnt.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
+#include "esp_log.h"
+
+static const char *TAG = "pulses";
+
+#define PCNT_HIGH_LIMIT    32767
+#define PCNT_LOW_LIMIT    -32768
+#define GLITCH_NS_MAX      12000      /* предел аппаратного фильтра ~12,8 мкс */
+#define NOTIFY_PERIOD_MS   1000
+
+static pcnt_unit_handle_t s_unit[PULSE_CH_COUNT];
+static uint32_t s_base[PULSE_CH_COUNT];
+static bool s_restored[PULSE_CH_COUNT];
+static bool s_dirty[PULSE_CH_COUNT];          /* нужно уведомить даже если total не менялся */
+static uint32_t s_last_total[PULSE_CH_COUNT];
+static uint32_t s_coeff;
+static bool s_started;
+static SemaphoreHandle_t s_lock;
+static pulse_counter_cb_t s_cb;
+static void *s_cb_arg;
+
+static uint32_t read_session(pulse_ch_t ch) {
+    int c = 0;
+    if (pcnt_unit_get_count(s_unit[ch], &c) != ESP_OK || c < 0) return 0;
+    return (uint32_t)c;
+}
+
+esp_err_t pulse_counter_get(pulse_ch_t ch, pulse_counter_data_t *out) {
+    if (!s_started || ch >= PULSE_CH_COUNT || !out) return ESP_ERR_INVALID_ARG;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    uint32_t session = read_session(ch);
+    uint32_t base = s_base[ch];
+    bool restored = s_restored[ch];
+    uint32_t coeff = s_coeff;
+    xSemaphoreGive(s_lock);
+
+    uint64_t total = (uint64_t)base + session;
+    if (total > UINT32_MAX) total = UINT32_MAX;
+    out->session = session;
+    out->base = base;
+    out->total = (uint32_t)total;
+    out->kwh = (double)(uint32_t)total / (double)coeff;
+    out->restored = restored;
+    return ESP_OK;
+}
+
+esp_err_t pulse_counter_restore(pulse_ch_t ch, uint32_t pulses) {
+    if (!s_started || ch >= PULSE_CH_COUNT) return ESP_ERR_INVALID_ARG;
+    esp_err_t e = ESP_OK;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    uint32_t session = read_session(ch);
+    if (s_restored[ch]) {
+        e = ESP_ERR_INVALID_STATE;
+    } else if ((uint64_t)pulses + session > UINT32_MAX) {
+        e = ESP_ERR_INVALID_ARG;
+    } else {
+        s_base[ch] = pulses;
+        s_restored[ch] = true;
+        s_dirty[ch] = true;
+    }
+    xSemaphoreGive(s_lock);
+    if (e == ESP_OK) ESP_LOGI(TAG, "E%d restored: base=%lu session=%lu", ch + 1, (unsigned long)pulses, (unsigned long)session);
+    return e;
+}
+
+esp_err_t pulse_counter_set_total(pulse_ch_t ch, uint32_t pulses) {
+    if (!s_started || ch >= PULSE_CH_COUNT) return ESP_ERR_INVALID_ARG;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_base[ch] = pulses;
+    s_restored[ch] = true;
+    s_dirty[ch] = true;
+    esp_err_t e = pcnt_unit_clear_count(s_unit[ch]);      /* session = 0 */
+    xSemaphoreGive(s_lock);
+    if (e == ESP_OK) ESP_LOGI(TAG, "E%d corrected: base=%lu, session reset", ch + 1, (unsigned long)pulses);
+    return e;
+}
+
+esp_err_t pulse_counter_set_kwh(pulse_ch_t ch, double kwh) {
+    if (!s_started || ch >= PULSE_CH_COUNT) return ESP_ERR_INVALID_ARG;
+    if (!isfinite(kwh) || kwh < 0) return ESP_ERR_INVALID_ARG;
+    double p = round(kwh * (double)s_coeff);
+    if (p > (double)UINT32_MAX) return ESP_ERR_INVALID_ARG;
+    return pulse_counter_set_total(ch, (uint32_t)p);
+}
+
+esp_err_t pulse_counter_set_coeff(uint32_t coeff) {
+    if (!s_started || coeff < PULSE_COEFF_MIN || coeff > PULSE_COEFF_MAX) return ESP_ERR_INVALID_ARG;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_coeff = coeff;
+    for (int ch = 0; ch < PULSE_CH_COUNT; ch++) s_dirty[ch] = true;
+    xSemaphoreGive(s_lock);
+    ESP_LOGI(TAG, "coeff changed: %lu imp/kWh", (unsigned long)coeff);
+    return ESP_OK;
+}
+
+void pulse_counter_set_callback(pulse_counter_cb_t cb, void *arg) {
+    s_cb_arg = arg;
+    s_cb = cb;
+}
+
+uint32_t pulse_counter_coeff(void) {
+    return s_coeff;
+}
+
+static bool take_dirty(int ch) {
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    bool d = s_dirty[ch];
+    s_dirty[ch] = false;
+    xSemaphoreGive(s_lock);
+    return d;
+}
+
+static void notify_task(void *arg) {
+    for (;;) {
+        for (int ch = 0; ch < PULSE_CH_COUNT; ch++) {
+            pulse_counter_data_t d;
+            if (pulse_counter_get((pulse_ch_t)ch, &d) != ESP_OK) continue;
+            bool dirty = take_dirty(ch);
+            if (d.total != s_last_total[ch] || dirty) {
+                s_last_total[ch] = d.total;
+                ESP_LOGI(TAG, "E%d session=%lu base=%lu total=%lu (%.3f kWh)", ch + 1,
+                         (unsigned long)d.session, (unsigned long)d.base,
+                         (unsigned long)d.total, d.kwh);
+                pulse_counter_cb_t cb = s_cb;
+                if (cb) cb((pulse_ch_t)ch, &d, s_cb_arg);
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(NOTIFY_PERIOD_MS));
+    }
+}
+
+static esp_err_t setup_channel(pulse_ch_t ch, const pulse_counter_cfg_t *cfg) {
+    pcnt_unit_config_t uc = {
+        .low_limit = PCNT_LOW_LIMIT,
+        .high_limit = PCNT_HIGH_LIMIT,
+        .flags.accum_count = true,      /* накапливать счет при переполнении 16-битного счетчика */
+    };
+    esp_err_t e = pcnt_new_unit(&uc, &s_unit[ch]);
+    if (e != ESP_OK) return e;
+
+    if (cfg->glitch_ns > 0) {
+        pcnt_glitch_filter_config_t fc = {
+            .max_glitch_ns = cfg->glitch_ns > GLITCH_NS_MAX ? GLITCH_NS_MAX : cfg->glitch_ns,
+        };
+        e = pcnt_unit_set_glitch_filter(s_unit[ch], &fc);
+        if (e != ESP_OK) return e;
+    }
+
+    pcnt_chan_config_t cc = {
+        .edge_gpio_num = cfg->gpio[ch],
+        .level_gpio_num = -1,
+    };
+    pcnt_channel_handle_t chan;
+    e = pcnt_new_channel(s_unit[ch], &cc, &chan);
+    if (e != ESP_OK) return e;
+
+    pcnt_channel_edge_action_t pos = cfg->count_falling ? PCNT_CHANNEL_EDGE_ACTION_HOLD : PCNT_CHANNEL_EDGE_ACTION_INCREASE;
+    pcnt_channel_edge_action_t neg = cfg->count_falling ? PCNT_CHANNEL_EDGE_ACTION_INCREASE : PCNT_CHANNEL_EDGE_ACTION_HOLD;
+    e = pcnt_channel_set_edge_action(chan, pos, neg);
+    if (e != ESP_OK) return e;
+
+    if (cfg->pull_up) gpio_set_pull_mode(cfg->gpio[ch], GPIO_PULLUP_ONLY);
+
+    /* Для flags.accum_count переполнение копится только при watch point на обоих пределах */
+    e = pcnt_unit_add_watch_point(s_unit[ch], PCNT_HIGH_LIMIT);
+    if (e != ESP_OK) return e;
+    e = pcnt_unit_add_watch_point(s_unit[ch], PCNT_LOW_LIMIT);
+    if (e != ESP_OK) return e;
+
+    e = pcnt_unit_enable(s_unit[ch]);
+    if (e != ESP_OK) return e;
+    e = pcnt_unit_clear_count(s_unit[ch]);
+    if (e != ESP_OK) return e;
+    return pcnt_unit_start(s_unit[ch]);
+}
+
+esp_err_t pulse_counter_start(const pulse_counter_cfg_t *cfg) {
+    if (s_started || !cfg || cfg->coeff < PULSE_COEFF_MIN || cfg->coeff > PULSE_COEFF_MAX) return ESP_ERR_INVALID_ARG;
+    s_lock = xSemaphoreCreateMutex();
+    if (!s_lock) return ESP_ERR_NO_MEM;
+    s_coeff = cfg->coeff;
+    for (int ch = 0; ch < PULSE_CH_COUNT; ch++) {
+        s_last_total[ch] = UINT32_MAX;     /* чтобы первое значение ушло в callback */
+        esp_err_t e = setup_channel((pulse_ch_t)ch, cfg);
+        if (e != ESP_OK) {
+            ESP_LOGE(TAG, "channel E%d setup failed: %s", ch + 1, esp_err_to_name(e));
+            return e;
+        }
+        ESP_LOGI(TAG, "E%d on GPIO%d, coeff=%lu, %s edge", ch + 1, (int)cfg->gpio[ch],
+                 (unsigned long)cfg->coeff, cfg->count_falling ? "falling" : "rising");
+    }
+    s_started = true;
+    return xTaskCreate(notify_task, "pulses", 3072, NULL, 4, NULL) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
+}
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\pulse_counter\CMakeLists.txt 
+================================================== 
+ 
+idf_component_register(SRCS "pulse_counter.c"
+                       INCLUDE_DIRS "include"
+                       REQUIRES esp_driver_pcnt esp_driver_gpio freertos)
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\pulse_counter\include\pulse_counter.h 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#pragma once
+#include <stdbool.h>
+#include <stdint.h>
+#include "esp_err.h"
+#include "driver/gpio.h"
+
+/*
+ * Счетчик импульсов на аппаратном PCNT. Каждый канал хранится в двух частях:
+ *   session - импульсы с момента старта МК (аппаратный счетчик);
+ *   base    - значение, восстановленное с MQTT-сервера после старта;
+ *   total   = base + session   (в импульсах),  kWh = total / coeff.
+ * Благодаря этому поздний приход значения с MQTT не портит счет.
+ */
+
+typedef enum {
+    PULSE_CH_E1 = 0,
+    PULSE_CH_E2 = 1,
+    PULSE_CH_COUNT
+} pulse_ch_t;
+
+#define PULSE_COEFF_MIN 1
+#define PULSE_COEFF_MAX 1000000
+
+typedef struct {
+    gpio_num_t gpio[PULSE_CH_COUNT];
+    uint32_t   coeff;          /* импульсов на кВт*ч (3200 и т.п.), PULSE_COEFF_MIN..MAX */
+    uint32_t   glitch_ns;      /* аппаратный фильтр помех, 0 = выключен */
+    bool       count_falling;  /* false - по переднему фронту, true - по заднему */
+    bool       pull_up;        /* включить внутреннюю подтяжку к питанию */
+} pulse_counter_cfg_t;
+
+typedef struct {
+    uint32_t session;          /* с момента старта МК (или с последней коррекции) */
+    uint32_t base;             /* восстановленное с MQTT или заданное коррекцией */
+    uint32_t total;            /* base + session, импульсы */
+    double   kwh;              /* total / coeff */
+    bool     restored;         /* base уже получен с MQTT (или задан коррекцией) */
+} pulse_counter_data_t;
+
+/* Вызывается из служебной задачи, когда total или коэффициент изменились (не чаще раза в секунду) */
+typedef void (*pulse_counter_cb_t)(pulse_ch_t ch, const pulse_counter_data_t *d, void *arg);
+
+esp_err_t pulse_counter_start(const pulse_counter_cfg_t *cfg);
+esp_err_t pulse_counter_get(pulse_ch_t ch, pulse_counter_data_t *out);
+
+/*
+ * Восстановление base после старта. Передавайте сюда только значение, сохраненное
+ * ПРЕДЫДУЩИМ запуском (первое retained-сообщение). Применяется один раз за запуск:
+ * повторный вызов вернет ESP_ERR_INVALID_STATE, чтобы повторная доставка retained-сообщения
+ * (уже включающего session) не удвоила счет. Если коррекция уже была, восстановление игнорируется.
+ */
+esp_err_t pulse_counter_restore(pulse_ch_t ch, uint32_t pulses);
+
+/*
+ * Коррекция текущего значения канала (команда из HA): base = pulses, session = 0.
+ * Можно вызывать в любой момент, любое число раз. После вызова поздний restore не применяется.
+ */
+esp_err_t pulse_counter_set_total(pulse_ch_t ch, uint32_t pulses);
+
+/* То же в киловатт-часах: pulses = round(kwh * coeff). Возвращает ESP_ERR_INVALID_ARG при выходе за диапазон. */
+esp_err_t pulse_counter_set_kwh(pulse_ch_t ch, double kwh);
+
+/*
+ * Смена коэффициента (команда из HA). Число импульсов не меняется, пересчитываются киловатт-часы.
+ * Сохранение в NVS - на вызывающей стороне: settings_t s = *settings_get(); s.coeff = coeff; settings_save(&s);
+ */
+esp_err_t pulse_counter_set_coeff(uint32_t coeff);
+
+/* Регистрирует обработчик изменений (для MQTT). Вызывайте до или после start. */
+void pulse_counter_set_callback(pulse_counter_cb_t cb, void *arg);
+
+uint32_t pulse_counter_coeff(void);
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\pzem004t\pzem004t.c 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#include "pzem004t.h"
+#include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
+#include "esp_log.h"
+#include "esp_timer.h"
+#include "settings.h"
+
+static const char *TAG = "pzem";
+
+#define PZEM_BAUD       9600
+#define PZEM_RX_BUF     256
+#define PZEM_TIMEOUT_MS 500
+#define PZEM_REGS       10          /* регистры 0x0000..0x0009 */
+#define PZEM_RESP_LEN   (5 + PZEM_REGS * 2)   /* адрес, функция, число байт, 20 байт, CRC(2) = 25 */
+
+static uart_port_t s_uart;
+static SemaphoreHandle_t s_mutex;
+static TaskHandle_t s_task;
+static pzem_data_t s_last;
+
+static uint16_t crc16(const uint8_t *d, size_t n) {
+    uint16_t crc = 0xFFFF;
+    for (size_t i = 0; i < n; i++) {
+        crc ^= d[i];
+        for (int b = 0; b < 8; b++) {
+            crc = (crc & 1) ? (uint16_t)((crc >> 1) ^ 0xA001) : (uint16_t)(crc >> 1);
+        }
+    }
+    return crc;
+}
+
+static void put_crc(uint8_t *frame, size_t n) {
+    uint16_t c = crc16(frame, n);
+    frame[n] = (uint8_t)(c & 0xFF);      /* Modbus: сначала младший байт */
+    frame[n + 1] = (uint8_t)(c >> 8);
+}
+
+static esp_err_t read_once(pzem_data_t *out) {
+    uint8_t req[8] = { PZEM_ADDR, 0x04, 0x00, 0x00, 0x00, PZEM_REGS };
+    put_crc(req, 6);
+    uart_flush_input(s_uart);
+    uart_write_bytes(s_uart, req, sizeof(req));
+
+    uint8_t r[PZEM_RESP_LEN];
+    int n = uart_read_bytes(s_uart, r, sizeof(r), pdMS_TO_TICKS(PZEM_TIMEOUT_MS));
+    if (n == 5 && (r[1] & 0x80)) {
+        ESP_LOGW(TAG, "modbus exception 0x%02X", r[2]);
+        return ESP_FAIL;
+    }
+    if (n != PZEM_RESP_LEN) return ESP_ERR_TIMEOUT;
+    if (r[1] != 0x04 || r[2] != PZEM_REGS * 2) return ESP_ERR_INVALID_RESPONSE;
+    uint16_t c = crc16(r, PZEM_RESP_LEN - 2);
+    if (r[PZEM_RESP_LEN - 2] != (c & 0xFF) || r[PZEM_RESP_LEN - 1] != (c >> 8)) return ESP_ERR_INVALID_CRC;
+
+    const uint8_t *d = &r[3];
+#define REG(i) ((uint16_t)((d[(i) * 2] << 8) | d[(i) * 2 + 1]))
+    uint32_t cur = ((uint32_t)REG(2) << 16) | REG(1);     /* младшее слово первым */
+    uint32_t pwr = ((uint32_t)REG(4) << 16) | REG(3);
+    uint32_t en  = ((uint32_t)REG(6) << 16) | REG(5);
+    out->voltage = REG(0) * 0.1f;
+    out->current = cur * 0.001f;
+    out->power = pwr * 0.1f;
+    out->energy_wh = en;
+    out->energy_kwh = en / 1000.0f;
+    out->frequency = REG(7) * 0.1f;
+    out->power_factor = REG(8) * 0.01f;
+    out->alarm = (REG(9) == 0xFFFF);
+#undef REG
+    out->valid = true;
+    out->timestamp_ms = esp_timer_get_time() / 1000;
+    out->error_count = 0;
+    return ESP_OK;
+}
+
+esp_err_t pzem_read(pzem_data_t *out) {
+    esp_err_t e = ESP_FAIL;
+    for (int i = 0; i < 3; i++) {
+        e = read_once(out);
+        if (e == ESP_OK) return ESP_OK;
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+    return e;
+}
+
+esp_err_t pzem_reset_energy(void) {
+    uint8_t req[4] = { PZEM_ADDR, 0x42 };
+    put_crc(req, 2);
+    uart_flush_input(s_uart);
+    uart_write_bytes(s_uart, req, sizeof(req));
+    uint8_t r[4];
+    int n = uart_read_bytes(s_uart, r, sizeof(r), pdMS_TO_TICKS(PZEM_TIMEOUT_MS));
+    return (n == 4 && r[1] == 0x42) ? ESP_OK : ESP_ERR_TIMEOUT;
+}
+
+void pzem_get_last(pzem_data_t *out) {
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
+    *out = s_last;
+    xSemaphoreGive(s_mutex);
+}
+
+void pzem_poll_now(void) {
+    if (s_task) xTaskNotifyGive(s_task);
+}
+
+static void pzem_task(void *arg) {
+    vTaskDelay(pdMS_TO_TICKS(1000));      /* дать модулю стартовать */
+    for (;;) {
+        pzem_data_t d = { 0 };
+        esp_err_t e = pzem_read(&d);
+        xSemaphoreTake(s_mutex, portMAX_DELAY);
+        if (e == ESP_OK) {
+            s_last = d;
+        } else {
+            s_last.error_count++;
+        }
+        xSemaphoreGive(s_mutex);
+        if (e == ESP_OK) {
+            ESP_LOGI(TAG, "U=%.1fV I=%.3fA P=%.1fW E=%luWh f=%.1fHz PF=%.2f",
+                     d.voltage, d.current, d.power, (unsigned long)d.energy_wh, d.frequency, d.power_factor);
+        } else {
+            ESP_LOGW(TAG, "read failed: %s", esp_err_to_name(e));
+        }
+        uint32_t period = settings_get()->pzem_period_s;
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(period * 1000UL));
+    }
+}
+
+esp_err_t pzem_start(uart_port_t uart, gpio_num_t tx, gpio_num_t rx) {
+    s_uart = uart;
+    s_mutex = xSemaphoreCreateMutex();
+    if (!s_mutex) return ESP_ERR_NO_MEM;
+    uart_config_t uc = {
+        .baud_rate = PZEM_BAUD,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_DEFAULT,
+    };
+    esp_err_t e = uart_driver_install(uart, PZEM_RX_BUF, 0, 0, NULL, 0);
+    if (e != ESP_OK) return e;
+    e = uart_param_config(uart, &uc);
+    if (e != ESP_OK) return e;
+    e = uart_set_pin(uart, tx, rx, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    if (e != ESP_OK) return e;
+    return xTaskCreate(pzem_task, "pzem", 3072, NULL, 4, &s_task) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
+}
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\pzem004t\CMakeLists.txt 
+================================================== 
+ 
+idf_component_register(SRCS "pzem004t.c"
+                       INCLUDE_DIRS "include"
+                       REQUIRES esp_driver_uart esp_timer settings esp_driver_gpio)
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\pzem004t\include\pzem004t.h 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#pragma once
+#include <stdbool.h>
+#include <stdint.h>
+#include "esp_err.h"
+#include "driver/uart.h"
+#include "driver/gpio.h"
+
+/* Адрес Modbus: 0xF8 - универсальный адрес, работает с одним модулем на линии */
+#define PZEM_ADDR 0xF8
+
+typedef struct {
+    bool     valid;          /* хотя бы одно успешное чтение */
+    bool     alarm;          /* сработала тревога по мощности */
+    float    voltage;        /* В */
+    float    current;        /* А */
+    float    power;          /* Вт */
+    uint32_t energy_wh;      /* Вт*ч, накопленная энергия модуля */
+    float    energy_kwh;     /* кВт*ч */
+    float    frequency;      /* Гц */
+    float    power_factor;   /* 0..1 */
+    int64_t  timestamp_ms;   /* время последнего успешного чтения (esp_timer) */
+    uint32_t error_count;    /* число неудачных циклов чтения подряд */
+} pzem_data_t;
+
+/* Запускает задачу опроса. Период берется из settings (pzem_period_s). */
+esp_err_t pzem_start(uart_port_t uart, gpio_num_t tx, gpio_num_t rx);
+/* Копия последних данных (потокобезопасно) */
+void pzem_get_last(pzem_data_t *out);
+/* Запросить внеочередной опрос */
+void pzem_poll_now(void);
+/* Однократное блокирующее чтение (до 3 попыток) */
+esp_err_t pzem_read(pzem_data_t *out);
+/* Сброс накопленной энергии в модуле */
+esp_err_t pzem_reset_energy(void);
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\settings\settings.c 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#include "settings.h"
+#include <stddef.h>
+#include <string.h>
+#include <stdio.h>
+#include <math.h>
+#include "nvs.h"
+#include "nvs_flash.h"
+#include "esp_rom_crc.h"
+#include "esp_log.h"
+#include "esp_mac.h"
+
+static const char *TAG = "settings";
+#define NS  "cfg"
+#define KEY "main"
+
+/* true, если строка-массив содержит завершающий ноль */
+#define STR_OK(a) (memchr((a), 0, sizeof(a)) != NULL)
+
+static settings_t s_cfg;
+static bool s_stored;       /* s_cfg совпадает с тем, что лежит в NVS (загружено или записано) */
+
+static uint32_t calc_crc(const settings_t *s) {
+    return esp_rom_crc32_le(0, (const uint8_t *)s, offsetof(settings_t, crc));
+}
+
+void settings_fill_defaults(settings_t *s) {
+    memset(s, 0, sizeof(*s));   /* обнуляем и padding, чтобы CRC был стабильным */
+    s->version = SETTINGS_VERSION;
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    snprintf(s->hostname, sizeof(s->hostname), HOST_NAME, mac[4], mac[5]);
+    s->mqtt_port = MQTT_DEFAULT_PORT;
+    strlcpy(s->mqtt_topic, MQTT_DEFAULT_TOPIC_PREFIX, sizeof(s->mqtt_topic));
+    strlcpy(s->mqtt_discovery_topic, DISCOVERY_TOPIC, sizeof(s->mqtt_discovery_topic));
+    s->mqtt_auto_discovery = MQTT_AUTO_DISCOVERY;
+    strlcpy(s->ntp_server, DEFAULT_NTP_SERVER, sizeof(s->ntp_server));
+    s->tz = DEFAULT_TZ;
+    s->coeff = DEFAULT_COEFF;
+    s->pzem_period_s = 60;
+    s->stats_uri[0] = '\0';
+    s->stats_period_s = DEFAULT_STATS_PERIOD_S;
+    s->energy_offset = 0.0f;
+}
+
+bool settings_validate(const settings_t *s) {
+    if (s->version != SETTINGS_VERSION) return false;
+    if (!STR_OK(s->wifi_ssid)) return false;
+    if (!STR_OK(s->wifi_pass)) return false;
+    if (!STR_OK(s->hostname)) return false;
+    if (!STR_OK(s->mqtt_host)) return false;
+    if (!STR_OK(s->mqtt_user)) return false;
+    if (!STR_OK(s->mqtt_pass)) return false;
+    if (!STR_OK(s->mqtt_topic)) return false;
+    if (!STR_OK(s->mqtt_discovery_topic)) return false;
+    if (!STR_OK(s->ntp_server)) return false;
+    if (s->mqtt_port == 0) return false;
+    if (s->mqtt_auto_discovery > 1) return false;
+    if (s->tz < -12 || s->tz > 14) return false;
+    if (!isfinite(s->initial_E1) || s->initial_E1 < 0) return false;
+    if (!isfinite(s->initial_E2) || s->initial_E2 < 0) return false;
+    if (s->coeff == 0) return false;
+    if (s->pzem_period_s < 60 || s->pzem_period_s > 3600) return false;
+    if (!STR_OK(s->stats_uri)) return false;
+    if (s->stats_period_s < STATS_PERIOD_MIN_S || s->stats_period_s > STATS_PERIOD_MAX_S) return false;
+    if (!isfinite(s->energy_offset)) return false;
+    return true;
+}
+
+static esp_err_t write_nvs(const settings_t *s) {
+    nvs_handle_t h;
+    esp_err_t e = nvs_open(NS, NVS_READWRITE, &h);
+    if (e != ESP_OK) return e;
+    e = nvs_set_blob(h, KEY, s, sizeof(*s));
+    if (e == ESP_OK) e = nvs_commit(h);
+    nvs_close(h);
+    return e;
+}
+
+esp_err_t settings_save(const settings_t *in) {
+    settings_t tmp = *in;
+    tmp.version = SETTINGS_VERSION;
+    tmp.crc = calc_crc(&tmp);
+    if (!settings_validate(&tmp)) return ESP_ERR_INVALID_ARG;
+    /* значение не изменилось - не расходуем ресурс flash */
+    if (s_stored && memcmp(&tmp, &s_cfg, sizeof(tmp)) == 0) return ESP_OK;
+    esp_err_t e = write_nvs(&tmp);
+    if (e == ESP_OK) {
+        s_cfg = tmp;
+        s_stored = true;
+    }
+    return e;
+}
+
+esp_err_t settings_reset_defaults(void) {
+    settings_t d;
+    settings_fill_defaults(&d);
+    return settings_save(&d);
+}
+
+esp_err_t settings_init(void) {
+    esp_err_t e = nvs_flash_init();
+    if (e == ESP_ERR_NVS_NO_FREE_PAGES || e == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        e = nvs_flash_init();
+    }
+    if (e != ESP_OK) return e;
+
+    settings_t tmp;
+    size_t len = sizeof(tmp);
+    nvs_handle_t h;
+    bool ok = false;
+    if (nvs_open(NS, NVS_READONLY, &h) == ESP_OK) {
+        if (nvs_get_blob(h, KEY, &tmp, &len) == ESP_OK && len == sizeof(tmp)
+            && tmp.crc == calc_crc(&tmp) && settings_validate(&tmp)) {
+            ok = true;
+        }
+        nvs_close(h);
+    }
+    if (ok) {
+        s_cfg = tmp;
+        s_stored = true;
+        ESP_LOGI(TAG, "loaded from NVS (ssid='%s')", s_cfg.wifi_ssid);
+    } else {
+        ESP_LOGW(TAG, "no valid settings, using defaults");
+        settings_fill_defaults(&s_cfg);
+        s_cfg.crc = calc_crc(&s_cfg);
+    }
+    return ESP_OK;
+}
+
+const settings_t *settings_get(void) {
+    return &s_cfg;
+}
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\settings\CMakeLists.txt 
+================================================== 
+ 
+idf_component_register(SRCS "settings.c"
+                       INCLUDE_DIRS "include"
+                       REQUIRES nvs_flash esp_rom esp_wifi)
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\settings\include\settings.h 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#pragma once
+#include <stdint.h>
+#include <stdbool.h>
+#include "esp_err.h"
+
+/* Версия формата структуры. Менять при любом изменении settings_t. */
+#define SETTINGS_VERSION 10
+
+#define FIRMWARE_VERSION "0.2"
+#define HARDWARE_VERSION "0.1"
+#define BRAND_NAME "eMeter32"
+/* В имени хоста нельзя использовать точку, поэтому версия прошивки в него не входит */
+#define HOST_NAME BRAND_NAME "-%02X%02X"
+#define CLASSIC 0
+#define LITE 1
+#define MODEL CLASSIC
+#define MANUFACTURER "Vals home Lab ©"
+
+/* Длины буферов включают завершающий ноль */
+#define SSID_LEN 33
+#define PASSW_LEN 64
+#define MQTT_HOST_LEN 64
+#define MQTT_LOGIN_LEN 32
+#define MQTT_PASSWORD_LEN 32
+#define MQTT_TOPIC_LEN 64
+#define NTP_HOST_LEN 64
+#define HOSTNAME_LEN 32
+#define STATS_URI_LEN 128
+
+#define DEFAULT_STATS_PERIOD_S 300
+#define STATS_PERIOD_MIN_S     60
+#define STATS_PERIOD_MAX_S     86400
+
+#ifndef DISCOVERY_TOPIC
+#define DISCOVERY_TOPIC "homeassistant"
+#endif
+
+#ifndef MQTT_AUTO_DISCOVERY
+#define MQTT_AUTO_DISCOVERY true
+#endif
+
+#define MQTT_DEFAULT_TOPIC_PREFIX BRAND_NAME
+#define MQTT_DEFAULT_PORT 1883
+
+#define DEFAULT_NTP_SERVER "ru.pool.ntp.org"
+#define DEFAULT_TZ 3          /* часовой пояс, часы от UTC */
+
+#define DEFAULT_COEFF 3200    /* импульсов на кВт*ч */
+
+typedef struct {
+    uint8_t  version;
+    /* Wi-Fi */
+    char     wifi_ssid[SSID_LEN];
+    char     wifi_pass[PASSW_LEN];
+    uint8_t  wifi_bssid[6];
+    bool     wifi_bssid_set;     /* false = любой роутер с этим SSID */
+    char     hostname[HOSTNAME_LEN];
+    /* MQTT */
+    char     mqtt_host[MQTT_HOST_LEN];  /* IP или имя брокера, пусто = MQTT выключен */
+    uint16_t mqtt_port;                 /* 1..65535 */
+    char     mqtt_user[MQTT_LOGIN_LEN];
+    char     mqtt_pass[MQTT_PASSWORD_LEN];
+    char     mqtt_topic[MQTT_TOPIC_LEN];
+    char     mqtt_discovery_topic[MQTT_TOPIC_LEN];
+    uint8_t  mqtt_auto_discovery;
+    /* NTP */
+    char     ntp_server[NTP_HOST_LEN];
+    int8_t   tz;                 /* -12..14 */
+    /* Начальные значения счетчиков, кВт*ч */
+    float    initial_E1;
+    float    initial_E2;
+    uint32_t coeff;              /* импульсов на кВт*ч, > 0 */
+    /* Опрос */
+    uint16_t pzem_period_s;      /* 60..3600 */
+    /* Статистика (HTTP POST JSON) */
+    char     stats_uri[STATS_URI_LEN];  /* пусто = передача выключена */
+    uint32_t stats_period_s;            /* 60..86400 */
+    /* Коррекция показаний PZEM, кВт*ч (может быть < 0). Меняется только из HA, в портале нет */
+    float    energy_offset;
+    /* Новые поля добавлять ПЕРЕД crc и поднимать SETTINGS_VERSION */
+    uint32_t crc;                /* всегда последнее поле */
+} settings_t;
+
+esp_err_t settings_init(void);                  /* читает NVS в RAM; при ошибке - defaults */
+const settings_t *settings_get(void);           /* только чтение */
+esp_err_t settings_save(const settings_t *s);   /* проверка + NVS + обновление RAM */
+esp_err_t settings_reset_defaults(void);
+void settings_fill_defaults(settings_t *s);
+bool settings_validate(const settings_t *s);
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\stats_push\stats_push.c 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#include "stats_push.h"
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_http_client.h"
+#include "esp_crt_bundle.h"
+#include "esp_timer.h"
+#include "esp_log.h"
+#include "settings.h"
+#include "wifi_mgr.h"
+#include "pzem004t.h"
+#include "pulse_counter.h"
+#include "ntp_sync.h"
+
+static const char *TAG = "stats";
+
+#define STATS_TIMEOUT_MS  10000
+#define STATS_RETRY_MS    15000
+#define STATS_FIRST_MS    10000
+
+static char s_body[640];
+
+static int build_json(char *out, size_t n) {
+    const settings_t *c = settings_get();
+    pzem_data_t p;
+    pzem_get_last(&p);
+    pulse_counter_data_t e1 = { 0 }, e2 = { 0 };
+    bool e1ok = pulse_counter_get(PULSE_CH_E1, &e1) == ESP_OK;
+    bool e2ok = pulse_counter_get(PULSE_CH_E2, &e2) == ESP_OK;
+    time_t ts = ntp_sync_is_synced() ? time(NULL) : 0;
+
+    int o = snprintf(out, n,
+        "{\"device\":\"%s\",\"fw\":\"%s\",\"ts\":%lld,\"uptime_s\":%lld,\"rssi\":%d,\"pzem\":",
+        c->hostname, FIRMWARE_VERSION, (long long)ts,
+        (long long)(esp_timer_get_time() / 1000000), wifi_mgr_rssi());
+    if (p.valid) {
+        o += snprintf(out + o, n - o,
+            "{\"valid\":true,\"voltage\":%.1f,\"current\":%.3f,\"power\":%.1f,"
+            "\"energy_kwh\":%.2f,\"frequency\":%.1f,\"pf\":%.2f,\"errors\":%lu}",
+            p.voltage, p.current, p.power, p.energy_kwh + c->energy_offset, p.frequency, p.power_factor,
+            (unsigned long)p.error_count);
+    } else {
+        o += snprintf(out + o, n - o, "{\"valid\":false,\"errors\":%lu}", (unsigned long)p.error_count);
+    }
+    o += snprintf(out + o, n - o, ",\"e1_kwh\":");
+    o += e1ok ? snprintf(out + o, n - o, "%.2f", e1.kwh) : snprintf(out + o, n - o, "null");
+    o += snprintf(out + o, n - o, ",\"e2_kwh\":");
+    o += e2ok ? snprintf(out + o, n - o, "%.2f", e2.kwh) : snprintf(out + o, n - o, "null");
+    o += snprintf(out + o, n - o, "}");
+    return o >= (int)n ? -1 : o;
+}
+
+static esp_err_t stats_send_once(void) {
+    const settings_t *c = settings_get();
+    if (c->stats_uri[0] == '\0') return ESP_ERR_INVALID_STATE;
+
+    int len = build_json(s_body, sizeof(s_body));
+    if (len < 0) return ESP_ERR_NO_MEM;
+
+    esp_http_client_config_t cfg = {
+        .url = c->stats_uri,
+        .method = HTTP_METHOD_POST,
+        .timeout_ms = STATS_TIMEOUT_MS,
+        .crt_bundle_attach = esp_crt_bundle_attach,   /* нужен только для https:// */
+    };
+    esp_http_client_handle_t h = esp_http_client_init(&cfg);
+    if (!h) return ESP_ERR_NO_MEM;
+    esp_http_client_set_header(h, "Content-Type", "application/json");
+    esp_http_client_set_post_field(h, s_body, len);
+
+    esp_err_t e = esp_http_client_perform(h);
+    if (e == ESP_OK) {
+        int code = esp_http_client_get_status_code(h);
+        if (code < 200 || code >= 300) {
+            ESP_LOGW(TAG, "server answered HTTP %d", code);
+            e = ESP_FAIL;
+        } else {
+            ESP_LOGI(TAG, "sent %d bytes, HTTP %d", len, code);
+        }
+    } else {
+        ESP_LOGW(TAG, "post failed: %s", esp_err_to_name(e));
+    }
+    esp_http_client_cleanup(h);
+    return e;
+}
+
+static void stats_task(void *arg) {
+    vTaskDelay(pdMS_TO_TICKS(STATS_FIRST_MS));
+    for (;;) {
+        uint32_t wait_ms;
+        if (!wifi_mgr_is_connected()) {
+            wait_ms = STATS_RETRY_MS;
+        } else {
+            wait_ms = stats_send_once() == ESP_OK ? settings_get()->stats_period_s * 1000UL
+                                                  : STATS_RETRY_MS;
+        }
+        vTaskDelay(pdMS_TO_TICKS(wait_ms));
+    }
+}
+
+esp_err_t stats_push_start(void) {
+    const settings_t *c = settings_get();
+    if (c->stats_uri[0] == '\0') {
+        ESP_LOGI(TAG, "stats_uri is empty, statistics push disabled");
+        return ESP_OK;
+    }
+    ESP_LOGI(TAG, "push to %s every %lu s", c->stats_uri, (unsigned long)c->stats_period_s);
+    return xTaskCreate(stats_task, "stats", 6144, NULL, 3, NULL) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
+}
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\stats_push\CMakeLists.txt 
+================================================== 
+ 
+idf_component_register(SRCS "stats_push.c"
+                       INCLUDE_DIRS "include"
+                       REQUIRES esp_http_client esp-tls esp_timer settings wifi_mgr pzem004t pulse_counter ntp_sync)
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\stats_push\include\stats_push.h 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#pragma once
+#include "esp_err.h"
+
+/* Запускает периодическую отправку статистики (HTTP POST, JSON).
+   Если stats_uri пуст, задача не создаётся. */
+esp_err_t stats_push_start(void);
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\user_button\user_button.c 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#include "user_button.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_log.h"
+
+static const char *TAG = "button";
+
+#define POLL_MS 50
+
+static gpio_num_t s_pin;
+static uint32_t s_hold_ms;
+static user_button_cb_t s_cb;
+
+static void button_task(void *arg) {
+    uint32_t held = 0;
+    bool fired = false;
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(POLL_MS));
+        if (gpio_get_level(s_pin) == 0) {          /* нажата (замкнута на GND) */
+            held += POLL_MS;
+            if (!fired && held >= s_hold_ms) {
+                fired = true;
+                ESP_LOGI(TAG, "long press detected");
+                if (s_cb) s_cb();
+            }
+        } else {
+            held = 0;
+            fired = false;
+        }
+    }
+}
+
+esp_err_t user_button_start(gpio_num_t pin, uint32_t hold_ms, user_button_cb_t cb) {
+    if (pin >= GPIO_NUM_34 && pin <= GPIO_NUM_39) return ESP_ERR_INVALID_ARG;   /* нет внутренней подтяжки */
+    s_pin = pin;
+    s_hold_ms = hold_ms;
+    s_cb = cb;
+    gpio_config_t cfg = {
+        .pin_bit_mask = 1ULL << pin,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    esp_err_t e = gpio_config(&cfg);
+    if (e != ESP_OK) return e;
+    return xTaskCreate(button_task, "button", 2048, NULL, 4, NULL) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
+}
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\user_button\CMakeLists.txt 
+================================================== 
+ 
+idf_component_register(SRCS "user_button.c"
+                       INCLUDE_DIRS "include"
+                       REQUIRES esp_driver_gpio freertos esp_timer)
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\user_button\include\user_button.h 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#pragma once
+#include <stdint.h>
+#include "esp_err.h"
+#include "driver/gpio.h"
+
+/* Кнопка между пином и GND. Включается внутренняя подтяжка к питанию (пины 34..39 ее не имеют). */
+typedef void (*user_button_cb_t)(void);
+
+/* cb вызывается один раз, когда кнопка удержана hold_ms миллисекунд.
+   Следующий вызов возможен только после отпускания кнопки. */
+esp_err_t user_button_start(gpio_num_t pin, uint32_t hold_ms, user_button_cb_t cb);
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\wifi_mgr\wifi_mgr.c 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#include "wifi_mgr.h"
+#include <string.h>
+#include <stdio.h>
+#include "esp_wifi.h"
+#include "esp_netif.h"
+#include "esp_event.h"
+#include "esp_timer.h"
+#include "esp_log.h"
+#include "settings.h"
+
+static const char *TAG = "wifi_mgr";
+
+static wifi_mgr_cb_t s_cb;
+static void *s_cb_arg;
+static volatile wifi_mgr_state_t s_state = WIFI_MGR_CONNECTING;
+static esp_netif_t *s_netif;
+static esp_timer_handle_t s_timer;
+static uint32_t s_attempt;
+static bool s_ever_connected;
+static bool s_gave_up;
+
+static void set_state(wifi_mgr_state_t st) {
+    s_state = st;
+    if (s_cb) s_cb(st, s_cb_arg);
+}
+
+static void retry_timer_cb(void *arg) {
+    if (s_gave_up) return;
+    set_state(WIFI_MGR_CONNECTING);
+    esp_wifi_connect();
+}
+
+static uint32_t backoff_s(uint32_t attempt) {
+    uint32_t shift = attempt > 0 ? attempt - 1 : 0;
+    if (shift > 5) shift = 5;
+    uint32_t d = WIFI_BACKOFF_BASE_S << shift;
+    return d > WIFI_BACKOFF_MAX_S ? WIFI_BACKOFF_MAX_S : d;
+}
+
+/* Расшифровка частых кодов отключения (wifi_err_reason_t) */
+static const char *reason_str(uint8_t r) {
+    switch (r) {
+        case 2:   return "auth expire";
+        case 15:  return "4way handshake timeout (неверный пароль?)";
+        case 200: return "beacon timeout (слабый сигнал)";
+        case 201: return "no AP found (сеть не найдена)";
+        case 202: return "auth fail";
+        case 203: return "assoc fail";
+        case 204: return "handshake timeout (неверный пароль?)";
+        case 205: return "connection fail";
+        case 210: return "no AP with compatible security";
+        case 211: return "no AP in authmode threshold";
+        case 212: return "no AP in RSSI threshold";
+        default:  return "other";
+    }
+}
+
+static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
+    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
+        if (s_gave_up) return;
+        s_attempt = 1;
+        set_state(WIFI_MGR_CONNECTING);
+        esp_wifi_connect();
+    } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+        if (s_gave_up) return;
+        wifi_event_sta_disconnected_t *d = data;
+        ESP_LOGW(TAG, "disconnected: reason=%d (%s), rssi=%d, attempt %u",
+                 d->reason, reason_str(d->reason), d->rssi, (unsigned)s_attempt);
+
+        bool fallback_allowed = !s_ever_connected || WIFI_AP_AFTER_LINK_LOSS;
+        if (fallback_allowed && s_attempt >= WIFI_MAX_ATTEMPTS) {
+            s_gave_up = true;
+            ESP_LOGE(TAG, "%d attempts failed -> AP required", WIFI_MAX_ATTEMPTS);
+            set_state(WIFI_MGR_AP_REQUIRED);
+            return;
+        }
+        uint32_t wait = backoff_s(s_attempt);
+        s_attempt++;
+        ESP_LOGI(TAG, "next attempt in %us", (unsigned)wait);
+        set_state(WIFI_MGR_RETRY_WAIT);
+        esp_timer_stop(s_timer);
+        esp_timer_start_once(s_timer, (uint64_t)wait * 1000000ULL);
+    } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t *e = data;
+        ESP_LOGI(TAG, "got IP " IPSTR, IP2STR(&e->ip_info.ip));
+        esp_timer_stop(s_timer);
+        s_attempt = 1;   /* следующий обрыв начнет отсчет заново */
+        s_ever_connected = true;
+        set_state(WIFI_MGR_CONNECTED);
+    }
+}
+
+esp_err_t wifi_mgr_start(wifi_mgr_cb_t cb, void *arg) {
+    s_cb = cb;
+    s_cb_arg = arg;
+    const settings_t *cfg = settings_get();
+
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    s_netif = esp_netif_create_default_wifi_sta();
+    esp_netif_set_hostname(s_netif, cfg->hostname);
+
+    wifi_init_config_t icfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&icfg));
+    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));  /* не хранить режим/AP во флеше */
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));        /* рабочий режим - только клиент */
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, on_wifi_event, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, on_wifi_event, NULL));
+
+    const esp_timer_create_args_t targs = { .callback = retry_timer_cb, .name = "wifi_retry" };
+    ESP_ERROR_CHECK(esp_timer_create(&targs, &s_timer));
+
+    if (cfg->wifi_ssid[0] == '\0') {
+        ESP_LOGW(TAG, "SSID not configured -> AP required");
+        s_gave_up = true;
+        set_state(WIFI_MGR_AP_REQUIRED);
+        return ESP_OK;
+    }
+
+    wifi_config_t wc = { 0 };
+    strlcpy((char *)wc.sta.ssid, cfg->wifi_ssid, sizeof(wc.sta.ssid));
+    strlcpy((char *)wc.sta.password, cfg->wifi_pass, sizeof(wc.sta.password));
+    if (cfg->wifi_bssid_set) {
+        wc.sta.bssid_set = true;
+        memcpy(wc.sta.bssid, cfg->wifi_bssid, 6);
+    }
+    wc.sta.threshold.authmode = cfg->wifi_pass[0] ? WIFI_AUTH_WPA_PSK : WIFI_AUTH_OPEN;
+    /* PMF: без него роутеры в режиме WPA2/WPA3 могут отклонять подключение */
+    wc.sta.pmf_cfg.capable = true;
+    wc.sta.pmf_cfg.required = false;
+    /* Искать на всех каналах и выбирать самую сильную точку с этим SSID */
+    wc.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
+    wc.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
+
+    if (cfg->wifi_bssid_set) {
+        ESP_LOGI(TAG, "connect: ssid='%s' pass_len=%d bssid=%02X:%02X:%02X:%02X:%02X:%02X",
+                 cfg->wifi_ssid, (int)strlen(cfg->wifi_pass),
+                 cfg->wifi_bssid[0], cfg->wifi_bssid[1], cfg->wifi_bssid[2],
+                 cfg->wifi_bssid[3], cfg->wifi_bssid[4], cfg->wifi_bssid[5]);
+    } else {
+        ESP_LOGI(TAG, "connect: ssid='%s' pass_len=%d bssid=any",
+                 cfg->wifi_ssid, (int)strlen(cfg->wifi_pass));
+    }
+
+    /* Режим STA уже задан выше, после esp_wifi_init() */
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wc));
+    esp_err_t e = esp_wifi_start();
+
+    if (e == ESP_OK) {
+        esp_err_t pe = esp_wifi_set_max_tx_power(WIFI_TX_POWER_STA);
+        if (pe != ESP_OK) {
+            ESP_LOGW(TAG, "set_max_tx_power failed: %s", esp_err_to_name(pe));
+        }
+        int8_t p = 0;
+        if (esp_wifi_get_max_tx_power(&p) == ESP_OK) {
+            ESP_LOGI(TAG, "tx power: %d (x0.25 dBm)", p);
+        }
+    }
+    return e;
+}
+
+wifi_mgr_state_t wifi_mgr_state(void) {
+    return s_state;
+}
+
+bool wifi_mgr_is_connected(void) {
+    return s_state == WIFI_MGR_CONNECTED;
+}
+
+int wifi_mgr_rssi(void) {
+    wifi_ap_record_t ap;
+    return (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) ? ap.rssi : 0;
+}
+
+esp_err_t wifi_mgr_ip(char *buf, size_t len) {
+    esp_netif_ip_info_t ip;
+    esp_err_t e = esp_netif_get_ip_info(s_netif, &ip);
+    if (e == ESP_OK) snprintf(buf, len, IPSTR, IP2STR(&ip.ip));
+    return e;
+}
+
+void wifi_mgr_suspend(void) {
+    s_gave_up = true;                 /* обработчик событий перестанет перезапускать подключение */
+    if (s_timer) esp_timer_stop(s_timer);
+    esp_wifi_disconnect();
+    set_state(WIFI_MGR_AP_REQUIRED);  /* вызовет captive_portal_start() через callback в main */
+}
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\wifi_mgr\CMakeLists.txt 
+================================================== 
+ 
+idf_component_register(SRCS "wifi_mgr.c"
+                       INCLUDE_DIRS "include"
+                       REQUIRES esp_wifi esp_netif esp_event esp_timer settings)
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\components\wifi_mgr\include\wifi_mgr.h 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#pragma once
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include "esp_err.h"
+
+#define WIFI_MAX_ATTEMPTS       10
+#define WIFI_BACKOFF_BASE_S     2
+#define WIFI_BACKOFF_MAX_S      60
+/* 0: AP только если ни разу не подключились; после потери связи пробуем вечно.
+   1: AP и после 10 неудач при потере связи. */
+#define WIFI_AP_AFTER_LINK_LOSS 0
+
+#define WIFI_TX_POWER_STA   60   /* рабочий режим: 15 дБм (для проверки; было 34 = 8,5 дБм) */
+#define WIFI_TX_POWER_AP    34   /* портал: 8,5 дБм */
+
+typedef enum {
+    WIFI_MGR_CONNECTING,
+    WIFI_MGR_CONNECTED,
+    WIFI_MGR_RETRY_WAIT,
+    WIFI_MGR_AP_REQUIRED,    /* пора запускать captive portal */
+} wifi_mgr_state_t;
+
+typedef void (*wifi_mgr_cb_t)(wifi_mgr_state_t state, void *arg);
+
+esp_err_t wifi_mgr_start(wifi_mgr_cb_t cb, void *arg);
+wifi_mgr_state_t wifi_mgr_state(void);
+bool wifi_mgr_is_connected(void);
+int  wifi_mgr_rssi(void);                        /* 0, если нет связи */
+esp_err_t wifi_mgr_ip(char *buf, size_t len);    /* строка IP */
+void wifi_mgr_suspend(void);   /* остановить подключение, перейти в AP_REQUIRED */
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\src\main.c 
+================================================== 
+ 
+// Copyright 2026 vals. All rights reserved.
+// SPDX-License-Identifier: MIT
+#include "esp_log.h"
+#include "board_config.h"
+#include "settings.h"
+#include "wifi_mgr.h"
+#include "captive_portal.h"
+#include "user_button.h"
+#include "display_ui.h"
+#include "pzem004t.h"
+#include "ntp_sync.h"
+#include "esp_timer.h"
+#include "stats_push.h"
+#include "pulse_counter.h"
+#include "mqtt_mgr.h"
+#include "ha_discovery.h"
+#include "ota_update.h"
+
+static const char *TAG = "main";
+
+static void on_wifi(wifi_mgr_state_t st, void *arg) {
+    ESP_LOGI(TAG, "wifi state = %d", st);
+    switch (st) {
+    case WIFI_MGR_CONNECTED:
+        ota_update_mark_valid();        /* новая прошивка дошла до сети - откат не нужен */
+        ntp_sync_on_wifi_connected();   /* сверка времени после подключения */
+        mqtt_mgr_start();               /* идемпотентно; без mqtt_host ничего не делает */
+        break;
+    case WIFI_MGR_AP_REQUIRED:
+        ota_update_mark_valid();        /* Wi-Fi работает, прошивка жива (устройство ещё не настроено) */
+        ota_update_stop();              /* порт 80 нужен порталу */
+        captive_portal_start();
+        break;
+    default:
+        break;
+    }
+}
+
+/* Ждать retained-значение с MQTT, затем взять начальные значения из настроек */
+#define PULSE_RESTORE_WAIT_US (60ULL * 1000000ULL)
+
+static void pulses_restore_initial(void *arg) {
+    const settings_t *c = settings_get();
+    /* для уже восстановленных каналов вернёт ESP_ERR_INVALID_STATE - это нормально */
+    pulse_counter_restore(PULSE_CH_E1, (uint32_t)((double)c->initial_E1 * c->coeff + 0.5));
+    pulse_counter_restore(PULSE_CH_E2, (uint32_t)((double)c->initial_E2 * c->coeff + 0.5));
+}
+
+static void pulses_start(void) {
+    const settings_t *c = settings_get();
+    pulse_counter_cfg_t pc = {
+        .gpio = { PIN_PULSE_E1, PIN_PULSE_E2 },
+        .coeff = c->coeff,
+        .glitch_ns = PULSE_GLITCH_NS,
+        .count_falling = PULSE_COUNT_FALLING,
+        .pull_up = PULSE_PULL_UP,
+    };
+    if (pulse_counter_start(&pc) != ESP_OK) {
+        ESP_LOGW(TAG, "pulse counter start failed");
+        return;
+    }
+    if (c->mqtt_host[0] == '\0') {
+        pulses_restore_initial(NULL);          /* MQTT выключен - восстанавливать не откуда */
+        return;
+    }
+    esp_timer_handle_t tm;
+    const esp_timer_create_args_t ta = { .callback = pulses_restore_initial, .name = "pulse_fb" };
+    if (esp_timer_create(&ta, &tm) == ESP_OK) esp_timer_start_once(tm, PULSE_RESTORE_WAIT_US);
+}
+
+static void on_portal_button(void) {
+    wifi_mgr_suspend();   /* остановить попытки подключения и перейти в AP_REQUIRED */
+}
+
+void app_main(void) {
+    ESP_ERROR_CHECK(settings_init());
+    ntp_sync_init();      /* часовой пояс из настроек, сеть не нужна */
+
+    if (display_ui_start() != ESP_OK) {
+        ESP_LOGW(TAG, "display not available, continuing without it");
+    }
+    if (pzem_start(PZEM_UART, PIN_PZEM_TX, PIN_PZEM_RX) != ESP_OK) {
+        ESP_LOGW(TAG, "pzem start failed");
+    }
+    pulses_start();
+    ota_update_init();
+    ha_discovery_start();   /* до Wi-Fi: регистрирует обработчики MQTT и счётчика */
+    ESP_ERROR_CHECK(wifi_mgr_start(on_wifi, NULL));
+    if (stats_push_start() != ESP_OK) {
+        ESP_LOGW(TAG, "stats push start failed");
+    }
+    ESP_ERROR_CHECK(user_button_start(PIN_PORTAL_BUTTON, PORTAL_BUTTON_HOLD_MS, on_portal_button));
+}
+
+ 
+ 
+ 
+ 
+================================================== 
+FILE: C:\Users\Vals\Documents\PlatformIO\Projects\eMeter32\src\CMakeLists.txt 
+================================================== 
+ 
+idf_component_register(SRCS "main.c" REQUIRES settings wifi_mgr captive_portal user_button board_config display_ui pzem004t pulse_counter stats_push mqtt_mgr ha_discovery ota_update esp_timer)
+
+ 
+ 
+ 
+ 

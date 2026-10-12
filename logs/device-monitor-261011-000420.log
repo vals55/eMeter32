@@ -1,0 +1,112 @@
+00:04:24.425 > I (8686) ntp: time synchronized: 2026-10-11 00:04:24
+00:04:24.860 > ets Jul 29 2019 12:21:46
+00:04:24.860 > 
+00:04:24.860 > rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+00:04:24.867 > configsip: 0, SPIWP:0xee
+00:04:24.867 > clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+00:04:24.871 > mode:DIO, clock div:2
+00:04:24.948 > load:0x3fff0030,len:6280
+00:04:24.948 > load:0x40078000,len:15864
+00:04:25.435 > load:0x40080400,len:3920
+00:04:25.435 >   #0  0x40080400 in _invalid_pc_placeholder at C:\Users\Vals\.platformio\packages\framework-espidf\components\xtensa/xtensa_vectors.S:2235
+00:04:25.435 > 
+00:04:25.435 > entry 0x4008063c
+00:04:25.435 > I (27) boot: ESP-IDF 5.5.3 2nd stage bootloader
+00:04:25.435 > I (27) boot: compile time Oct 10 2026 23:28:17
+00:04:25.435 > I (28) boot: Multicore bootloader
+00:04:25.435 > I (29) boot: chip revision: v3.1
+00:04:25.435 > I (31) boot.esp32: SPI Speed      : 40MHz
+00:04:25.435 > I (35) boot.esp32: SPI Mode       : DIO
+00:04:25.435 > I (39) boot.esp32: SPI Flash Size : 4MB
+00:04:25.435 > I (42) boot: Enabling RNG early entropy source...
+00:04:25.435 > I (47) boot: Partition Table:
+00:04:25.435 > I (49) boot: ## Label            Usage          Type ST Offset   Length
+00:04:25.435 > I (56) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+00:04:25.435 > I (62) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+00:04:25.435 > I (69) boot:  2 factory          factory app      00 00 00010000 00100000
+00:04:25.435 > I (75) boot: End of partition table
+00:04:25.436 > I (79) esp_image: segment 0: paddr=00010020 vaddr=3f400020 size=21400h (136192) map
+00:04:25.436 > I (133) esp_image: segment 1: paddr=00031428 vaddr=3ffb0000 size=04428h ( 17448) load
+00:04:25.436 > I (139) esp_image: segment 2: paddr=00035858 vaddr=40080000 size=0a7c0h ( 42944) load
+00:04:25.436 > I (156) esp_image: segment 3: paddr=00040020 vaddr=400d0020 size=a06c8h (657096) map
+00:04:25.436 > I (381) esp_image: segment 4: paddr=000e06f0 vaddr=4008a7c0 size=0ec30h ( 60464) load
+00:04:25.436 > I (405) esp_image: segment 5: paddr=000ef328 vaddr=50000000 size=00020h (    32) load
+00:04:25.436 > I (417) boot: Loaded app from partition at offset 0x10000
+00:04:25.436 > I (417) boot: Disabling RNG early entropy source...
+00:04:25.436 > I (428) cpu_start: Multicore app
+00:04:25.436 > I (436) cpu_start: GPIO 3 and 1 are used as console UART I/O pins
+00:04:25.436 > I (437) cpu_start: Pro cpu start user code
+00:04:25.436 > I (437) cpu_start: cpu freq: 160000000 Hz
+00:04:25.436 > I (438) app_init: Application information:
+00:04:25.436 > I (442) app_init: Project name:     eMeter32
+00:04:25.436 > I (446) app_init: App version:      1.0.0
+00:04:25.436 > I (450) app_init: Compile time:     Oct 10 2026 23:24:07
+00:04:25.436 > I (455) app_init: ELF file SHA256:  f12cba75f...
+00:04:25.436 > I (459) app_init: ESP-IDF:          5.5.3
+00:04:25.436 > I (463) efuse_init: Min chip rev:     v0.0
+00:04:25.436 > I (467) efuse_init: Max chip rev:     v3.99 
+00:04:25.436 > I (471) efuse_init: Chip rev:         v3.1
+00:04:25.436 > I (475) heap_init: Initializing. RAM available for dynamic allocation:
+00:04:25.436 > I (481) heap_init: At 3FFAE6E0 len 00001920 (6 KiB): DRAM
+00:04:25.436 > I (486) heap_init: At 3FFB9318 len 00026CE8 (155 KiB): DRAM
+00:04:25.436 > I (491) heap_init: At 3FFE0440 len 00003AE0 (14 KiB): D/IRAM
+00:04:25.436 > I (497) heap_init: At 3FFE4350 len 0001BCB0 (111 KiB): D/IRAM
+00:04:25.436 > I (502) heap_init: At 400993F0 len 00006C10 (27 KiB): IRAM
+00:04:25.436 > I (509) spi_flash: detected chip: generic
+00:04:25.436 > I (511) spi_flash: flash io: dio
+00:04:25.436 > I (516) main_task: Started on CPU0
+00:04:25.436 > I (526) main_task: Calling app_main()
+00:04:25.436 > I (536) settings: loaded from NVS (ssid='private-koptevo-wlan-bgn')
+00:04:25.436 > I (536) ntp: timezone set: UTC-3
+00:04:25.436 > E (536) oled: display not found at 0x3C (check wiring/address)
+00:04:25.436 > W (536) main: display not available, continuing without it
+00:04:25.436 > I (556) wifi:wifi driver task: 3ffc2c40, prio:23, stack:6656, core=0
+00:04:25.436 > I (556) wifi:wifi firmware version: 4df78f2
+00:04:25.436 > I (556) wifi:wifi certification version: v7.0
+00:04:25.436 > I (556) wifi:config NVS flash: enabled
+00:04:25.436 > I (566) wifi:config nano formatting: disabled
+00:04:25.441 > I (566) wifi:Init data frame dynamic rx buffer num: 32
+00:04:25.446 > I (576) wifi:Init static rx mgmt buffer num: 5
+00:04:25.451 > I (576) wifi:Init management short buffer num: 32
+00:04:25.451 > I (576) wifi:Init dynamic tx buffer num: 32
+00:04:25.457 > I (586) wifi:Init static rx buffer size: 1600
+00:04:25.462 > I (586) wifi:Init static rx buffer num: 10
+00:04:25.462 > I (596) wifi:Init dynamic rx buffer num: 32
+00:04:25.468 > I (596) wifi_init: rx ba win: 6
+00:04:25.474 > I (596) wifi_init: accept mbox: 6
+00:04:25.474 > I (606) wifi_init: tcpip mbox: 32
+00:04:25.480 > I (606) wifi_init: udp mbox: 6
+00:04:25.480 > I (606) wifi_init: tcp mbox: 6
+00:04:25.487 > I (606) wifi_init: tcp tx win: 5760
+00:04:25.487 > I (616) wifi_init: tcp rx win: 5760
+00:04:25.487 > I (616) wifi_init: tcp mss: 1440
+00:04:25.487 > I (616) wifi_init: WiFi IRAM OP enabled
+00:04:25.487 > I (626) wifi_init: WiFi RX IRAM OP enabled
+00:04:25.502 > I (626) wifi_mgr: connect: ssid='private-koptevo-wlan-bgn' pass_len=8 bssid=B8:69:F4:80:0A:09
+00:04:25.507 > I (636) phy_init: phy_version 4863,a3a4459,Oct 28 2025,14:30:06
+00:04:25.590 > I (726) wifi:mode : sta (30:76:f5:90:99:a0)
+00:04:25.591 > I (726) wifi:enable tsf
+00:04:25.594 > I (726) main: wifi state = 0
+00:04:25.594 > I (736) wifi_mgr: tx power: 60 (x0.25 dBm)
+00:04:25.601 > I (736) main_task: Returned from app_main()
+00:04:28.258 > I (3396) wifi:new:<3,0>, old:<1,0>, ap:<255,255>, sta:<3,0>, prof:1, snd_ch_cfg:0x0
+00:04:28.264 > I (3396) wifi:state: init -> auth (0xb0)
+00:04:28.287 > I (3426) wifi:state: auth -> assoc (0x0)
+00:04:28.311 > I (3446) wifi:state: assoc -> run (0x10)
+00:04:28.325 > I (3456) wifi:connected with private-koptevo-wlan-bgn, aid = 8, channel 3, BW20, bssid = b8:69:f4:80:0a:09
+00:04:28.325 > I (3456) wifi:security: WPA2-PSK, phy: bgn, rssi: -62
+00:04:28.336 > I (3466) wifi:pm start, type: 1
+00:04:28.341 > 
+00:04:28.341 > I (3466) wifi:dp: 1, bi: 102400, li: 3, scale listen interval from 307200 us to 307200 us
+00:04:28.354 > I (3486) wifi:AP's beacon interval = 102400 us, DTIM period = 1
+00:04:28.355 > I (3496) wifi:<ba-add>idx:0 (ifx:0, b8:69:f4:80:0a:09), tid:0, ssn:3, winSize:64
+00:04:28.505 > W (3646) pzem: read failed: ESP_ERR_TIMEOUT
+00:04:29.357 > I (4496) esp_netif_handlers: sta ip: 192.168.254.111, mask: 255.255.255.0, gw: 192.168.254.254
+00:04:29.363 > I (4496) wifi_mgr: got IP 192.168.254.111
+00:04:29.369 > I (4496) main: wifi state = 1
+00:04:29.369 > I (4496) ntp: starting SNTP, server ru.pool.ntp.org
+00:04:33.698 > I (8836) ntp: time synchronized: 2026-10-11 00:04:34
+00:05:30.599 > W (65746) pzem: read failed: ESP_ERR_TIMEOUT
+00:06:32.703 > W (127846) pzem: read failed: ESP_ERR_TIMEOUT
+00:07:34.801 > W (189946) pzem: read failed: ESP_ERR_TIMEOUT
+00:08:36.900 > W (252046) pzem: read failed: ESP_ERR_TIMEOUT

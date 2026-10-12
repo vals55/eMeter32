@@ -1,0 +1,455 @@
+22:19:32.186 > ets Jul 29 2019 12:21:46
+22:19:32.187 > 
+22:19:32.187 > rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+22:19:32.191 > configsip: 0, SPIWP:0xee
+22:19:32.191 > clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+22:19:32.197 > mode:DIO, clock div:2
+22:19:32.404 > load:0x3fff0030,len:6280
+22:19:32.404 > load:0x40078000,len:15864
+22:19:32.899 > load:0x40080400,len:3920
+22:19:32.899 >   #0  0x40080400 in _invalid_pc_placeholder at C:\Users\Vals\.platformio\packages\framework-espidf\components\xtensa/xtensa_vectors.S:2235
+22:19:32.899 > 
+22:19:32.899 > entry 0x4008063c
+22:19:32.899 > I (27) boot: ESP-IDF 5.5.3 2nd stage bootloader
+22:19:32.899 > I (27) boot: compile time Oct 10 2026 22:01:40
+22:19:32.899 > I (27) boot: Multicore bootloader
+22:19:32.899 > I (29) boot: chip revision: v3.1
+22:19:32.899 > I (31) boot.esp32: SPI Speed      : 40MHz
+22:19:32.899 > I (35) boot.esp32: SPI Mode       : DIO
+22:19:32.899 > I (39) boot.esp32: SPI Flash Size : 4MB
+22:19:32.899 > I (42) boot: Enabling RNG early entropy source...
+22:19:32.899 > I (47) boot: Partition Table:
+22:19:32.899 > I (49) boot: ## Label            Usage          Type ST Offset   Length
+22:19:32.899 > I (56) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+22:19:32.899 > I (62) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+22:19:32.899 > I (69) boot:  2 factory          factory app      00 00 00010000 00100000
+22:19:32.899 > I (75) boot: End of partition table
+22:19:32.899 > I (79) esp_image: segment 0: paddr=00010020 vaddr=3f400020 size=203d0h (132048) map
+22:19:32.899 > I (131) esp_image: segment 1: paddr=000303f8 vaddr=3ffb0000 size=043b8h ( 17336) load
+22:19:32.899 > I (138) esp_image: segment 2: paddr=000347b8 vaddr=40080000 size=0b860h ( 47200) load
+22:19:32.899 > I (156) esp_image: segment 3: paddr=00040020 vaddr=400d0020 size=98214h (623124) map
+22:19:32.901 > I (370) esp_image: segment 4: paddr=000d823c vaddr=4008b860 size=0db68h ( 56168) load
+22:19:32.901 > I (392) esp_image: segment 5: paddr=000e5dac vaddr=50000000 size=00020h (    32) load
+22:19:32.901 > I (404) boot: Loaded app from partition at offset 0x10000
+22:19:32.901 > I (404) boot: Disabling RNG early entropy source...
+22:19:32.901 > I (415) cpu_start: Multicore app
+22:19:32.901 > I (423) cpu_start: GPIO 3 and 1 are used as console UART I/O pins
+22:19:32.901 > I (423) cpu_start: Pro cpu start user code
+22:19:32.901 > I (423) cpu_start: cpu freq: 160000000 Hz
+22:19:32.901 > I (425) app_init: Application information:
+22:19:32.901 > I (429) app_init: Project name:     eMeter32
+22:19:32.901 > I (433) app_init: App version:      1.0.0
+22:19:32.901 > I (437) app_init: Compile time:     Oct 10 2026 21:56:39
+22:19:32.901 > I (442) app_init: ELF file SHA256:  d8b8e2947...
+22:19:32.901 > I (446) app_init: ESP-IDF:          5.5.3
+22:19:32.901 > I (450) efuse_init: Min chip rev:     v0.0
+22:19:32.901 > I (454) efuse_init: Max chip rev:     v3.99 
+22:19:32.901 > I (458) efuse_init: Chip rev:         v3.1
+22:19:32.901 > I (462) heap_init: Initializing. RAM available for dynamic allocation:
+22:19:32.901 > I (468) heap_init: At 3FFAE6E0 len 00001920 (6 KiB): DRAM
+22:19:32.901 > I (473) heap_init: At 3FFB8D50 len 000272B0 (156 KiB): DRAM
+22:19:32.901 > I (478) heap_init: At 3FFE0440 len 00003AE0 (14 KiB): D/IRAM
+22:19:32.901 > I (484) heap_init: At 3FFE4350 len 0001BCB0 (111 KiB): D/IRAM
+22:19:32.901 > I (489) heap_init: At 400993C8 len 00006C38 (27 KiB): IRAM
+22:19:32.901 > I (496) spi_flash: detected chip: generic
+22:19:32.901 > I (498) spi_flash: flash io: dio
+22:19:32.901 > I (502) main_task: Started on CPU0
+22:19:32.901 > I (512) main_task: Calling app_main()
+22:19:32.901 > W (532) settings: no valid settings, using defaults
+22:19:32.901 > E (532) oled: display not found at 0x3C (check wiring/address)
+22:19:32.901 > W (532) main: display not available, continuing without it
+22:19:32.901 > I (552) wifi:wifi driver task: 3ffc2628, prio:23, stack:6656, core=0
+22:19:32.901 > I (562) wifi:wifi firmware version: 4df78f2
+22:19:32.901 > I (562) wifi:wifi certification version: v7.0
+22:19:32.901 > I (562) wifi:config NVS flash: enabled
+22:19:32.901 > I (562) wifi:config nano formatting: disabled
+22:19:32.901 > I (562) wifi:Init data frame dynamic rx buffer num: 32
+22:19:32.901 > I (572) wifi:Init static rx mgmt buffer num: 5
+22:19:32.901 > I (572) wifi:Init management short buffer num: 32
+22:19:32.901 > I (572) wifi:Init dynamic tx buffer num: 32
+22:19:32.901 > I (582) wifi:Init static rx buffer size: 1600
+22:19:32.901 > I (582) wifi:Init static rx buffer num: 10
+22:19:32.901 > I (592) wifi:Init dynamic rx buffer num: 32
+22:19:32.901 > I (592) wifi_init: rx ba win: 6
+22:19:32.901 > I (592) wifi_init: accept mbox: 6
+22:19:32.901 > I (602) wifi_init: tcpip mbox: 32
+22:19:32.901 > I (602) wifi_init: udp mbox: 6
+22:19:32.901 > I (602) wifi_init: tcp mbox: 6
+22:19:32.901 > I (602) wifi_init: tcp tx win: 5760
+22:19:32.901 > I (612) wifi_init: tcp rx win: 5760
+22:19:32.901 > I (612) wifi_init: tcp mss: 1440
+22:19:32.901 > I (612) wifi_init: WiFi IRAM OP enabled
+22:19:32.901 > I (622) wifi_init: WiFi RX IRAM OP enabled
+22:19:32.901 > W (622) wifi_mgr: SSID not configured -> AP required
+22:19:32.901 > I (632) main: wifi state = 3
+22:19:32.901 > I (642) phy_init: phy_version 4863,a3a4459,Oct 28 2025,14:30:06
+22:19:32.910 > I (722) phy_init: Saving new calibration data due to checksum failure or outdated calibration data, mode(0)
+22:19:32.916 > I (722) main_task: Returned from app_main()
+22:19:32.931 > I (742) wifi:mode : sta (30:76:f5:90:99:a0) + softAP (30:76:f5:90:99:a1)
+22:19:32.937 > I (742) wifi:enable tsf
+22:19:32.937 > I (742) wifi:Total power save buffer number: 16
+22:19:32.943 > I (742) wifi:Init max length of beacon: 752/752
+22:19:32.949 > I (752) wifi:Init max length of beacon: 752/752
+22:19:32.949 > I (752) portal: AP 'eMeter32-99a0' started, IP 192.168.4.1
+22:19:32.954 > I (752) esp_netif_lwip: DHCP server started on interface WIFI_AP_DEF with IP: 192.168.4.1
+22:19:32.966 > I (772) portal: http server started
+22:19:35.817 > W (3632) pzem: read failed: ESP_ERR_TIMEOUT
+22:19:55.894 > I (23702) wifi:new:<1,1>, old:<1,1>, ap:<1,1>, sta:<0,0>, prof:1, snd_ch_cfg:0x0
+22:19:55.900 > I (23702) wifi:station: 98:43:fa:6a:a7:57 join, AID=1, bgn, 40U
+22:19:56.656 > I (24462) esp_netif_lwip: DHCP server assigned IP to a client, IP is: 192.168.4.2
+22:19:58.127 > W (25932) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:19:58.350 > I (26162) wifi:<ba-add>idx:2 (ifx:1, 98:43:fa:6a:a7:57), tid:0, ssn:87, winSize:64
+22:19:58.462 > W (26272) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:20:19.567 > W (47372) httpd_uri: httpd_uri: URI '/redirect' not found
+22:20:22.807 > W (50612) httpd_uri: httpd_uri: URI '/favicon.ico' not found
+22:20:24.791 > W (52602) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:20:24.803 > W (52612) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:20:25.133 > W (52942) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:20:25.153 > W (52962) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:20:37.916 > W (65732) pzem: read failed: ESP_ERR_TIMEOUT
+22:20:55.273 > W (83082) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:20:55.283 > W (83092) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:20:55.609 > W (83422) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:20:55.641 > W (83452) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:21:25.775 > W (113582) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:21:25.787 > W (113602) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:21:26.152 > W (113962) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:21:26.159 > W (113972) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:21:40.015 > W (127832) pzem: read failed: ESP_ERR_TIMEOUT
+22:21:56.283 > W (144092) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:21:56.295 > W (144102) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:21:56.636 > W (144452) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:21:56.645 > W (144452) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:22:26.753 > W (174562) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:22:26.763 > W (174572) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:22:27.127 > W (174942) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:22:27.135 > W (174942) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:22:42.113 > W (189932) pzem: read failed: ESP_ERR_TIMEOUT
+22:22:57.239 > W (205052) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:22:57.248 > W (205062) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:22:57.575 > W (205382) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:22:57.588 > W (205402) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:23:08.923 > I (216732) portal: settings saved, restarting
+22:23:09.093 > W (216902) httpd_uri: httpd_uri: URI '/favicon.ico' not found
+22:23:10.927 > I (218742) wifi:station: 98:43:fa:6a:a7:57 leave, AID = 1, reason = 2, bss_flags is 33786979, bss:0x3ffc8c78
+22:23:11.030 > I (218742) wifi:new:<1,0>, old:<1,1>, ap:<1,1>, sta:<0,0>, prof:1, snd_ch_cfg:0x0
+22:23:11.074 > I (218752) wifi:<ba-del>idx:2, tid:0
+22:23:11.074 > I (218752) wifi:new:<1,1>, old:<1,0>, ap:<1,1>, sta:<0,0>, prof:1, snd_ch_cfg:0x0
+22:23:11.074 > W (218762) httpd_txrx: httpd_sock_err: error in recv : 113
+22:23:11.074 > W (218762) httpd_txrx: httpd_sock_err: error in recv : 113
+22:23:11.074 > W (218772) httpd_txrx: httpd_sock_err: error in recv : 113
+22:23:11.074 > I (218822) wifi:flush txq
+22:23:11.074 > I (218822) wifi:stop sw txq
+22:23:11.074 > I (218822) wifi:lmac stop hw txq
+22:23:11.074 > ets Jul 29 2019 12:21:46
+22:23:11.074 > 
+22:23:11.074 > rst:0xc (SW_CPU_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+22:23:11.074 > configsip: 0, SPIWP:0xee
+22:23:11.074 > clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+22:23:11.074 > mode:DIO, clock div:2
+22:23:11.074 > load:0x3fff0030,len:6280
+22:23:11.074 > load:0x40078000,len:15864
+22:23:11.628 > load:0x40080400,len:3920
+22:23:11.628 >   #0  0x40080400 in _invalid_pc_placeholder at C:\Users\Vals\.platformio\packages\framework-espidf\components\xtensa/xtensa_vectors.S:2235
+22:23:11.628 > 
+22:23:11.628 > entry 0x4008063c
+22:23:11.628 > I (27) boot: ESP-IDF 5.5.3 2nd stage bootloader
+22:23:11.628 > I (27) boot: compile time Oct 10 2026 22:01:40
+22:23:11.628 > I (27) boot: Multicore bootloader
+22:23:11.628 > I (29) boot: chip revision: v3.1
+22:23:11.628 > I (31) boot.esp32: SPI Speed      : 40MHz
+22:23:11.628 > I (35) boot.esp32: SPI Mode       : DIO
+22:23:11.628 > I (39) boot.esp32: SPI Flash Size : 4MB
+22:23:11.628 > I (42) boot: Enabling RNG early entropy source...
+22:23:11.628 > I (47) boot: Partition Table:
+22:23:11.628 > I (49) boot: ## Label            Usage          Type ST Offset   Length
+22:23:11.628 > I (56) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+22:23:11.629 > I (62) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+22:23:11.629 > I (69) boot:  2 factory          factory app      00 00 00010000 00100000
+22:23:11.629 > I (75) boot: End of partition table
+22:23:11.629 > I (79) esp_image: segment 0: paddr=00010020 vaddr=3f400020 size=203d0h (132048) map
+22:23:11.629 > I (131) esp_image: segment 1: paddr=000303f8 vaddr=3ffb0000 size=043b8h ( 17336) load
+22:23:11.629 > I (138) esp_image: segment 2: paddr=000347b8 vaddr=40080000 size=0b860h ( 47200) load
+22:23:11.629 > I (156) esp_image: segment 3: paddr=00040020 vaddr=400d0020 size=98214h (623124) map
+22:23:11.629 > I (370) esp_image: segment 4: paddr=000d823c vaddr=4008b860 size=0db68h ( 56168) load
+22:23:11.629 > I (392) esp_image: segment 5: paddr=000e5dac vaddr=50000000 size=00020h (    32) load
+22:23:11.629 > I (404) boot: Loaded app from partition at offset 0x10000
+22:23:11.629 > I (404) boot: Disabling RNG early entropy source...
+22:23:11.629 > I (415) cpu_start: Multicore app
+22:23:11.629 > I (423) cpu_start: GPIO 3 and 1 are used as console UART I/O pins
+22:23:11.629 > I (423) cpu_start: Pro cpu start user code
+22:23:11.629 > I (423) cpu_start: cpu freq: 160000000 Hz
+22:23:11.629 > I (425) app_init: Application information:
+22:23:11.629 > I (429) app_init: Project name:     eMeter32
+22:23:11.629 > I (433) app_init: App version:      1.0.0
+22:23:11.629 > I (437) app_init: Compile time:     Oct 10 2026 21:56:39
+22:23:11.629 > I (442) app_init: ELF file SHA256:  d8b8e2947...
+22:23:11.629 > I (446) app_init: ESP-IDF:          5.5.3
+22:23:11.629 > I (450) efuse_init: Min chip rev:     v0.0
+22:23:11.629 > I (454) efuse_init: Max chip rev:     v3.99 
+22:23:11.629 > I (458) efuse_init: Chip rev:         v3.1
+22:23:11.629 > I (462) heap_init: Initializing. RAM available for dynamic allocation:
+22:23:11.629 > I (468) heap_init: At 3FFAE6E0 len 00001920 (6 KiB): DRAM
+22:23:11.629 > I (473) heap_init: At 3FFB8D50 len 000272B0 (156 KiB): DRAM
+22:23:11.629 > I (478) heap_init: At 3FFE0440 len 00003AE0 (14 KiB): D/IRAM
+22:23:11.629 > I (483) heap_init: At 3FFE4350 len 0001BCB0 (111 KiB): D/IRAM
+22:23:11.629 > I (489) heap_init: At 400993C8 len 00006C38 (27 KiB): IRAM
+22:23:11.629 > I (496) spi_flash: detected chip: generic
+22:23:11.629 > I (498) spi_flash: flash io: dio
+22:23:11.629 > I (502) main_task: Started on CPU0
+22:23:11.629 > I (512) main_task: Calling app_main()
+22:23:11.629 > I (532) settings: loaded from NVS (ssid='private-koptevo-wlan-bgn')
+22:23:11.629 > E (532) oled: display not found at 0x3C (check wiring/address)
+22:23:11.629 > W (532) main: display not available, continuing without it
+22:23:11.629 > I (552) wifi:wifi driver task: 3ffc26cc, prio:23, stack:6656, core=0
+22:23:11.629 > I (562) wifi:wifi firmware version: 4df78f2
+22:23:11.629 > I (562) wifi:wifi certification version: v7.0
+22:23:11.629 > I (562) wifi:config NVS flash: enabled
+22:23:11.629 > I (562) wifi:config nano formatting: disabled
+22:23:11.629 > I (562) wifi:Init data frame dynamic rx buffer num: 32
+22:23:11.629 > I (572) wifi:Init static rx mgmt buffer num: 5
+22:23:11.629 > I (572) wifi:Init management short buffer num: 32
+22:23:11.629 > I (572) wifi:Init dynamic tx buffer num: 32
+22:23:11.629 > I (582) wifi:Init static rx buffer size: 1600
+22:23:11.629 > I (582) wifi:Init static rx buffer num: 10
+22:23:11.629 > I (592) wifi:Init dynamic rx buffer num: 32
+22:23:11.629 > I (592) wifi_init: rx ba win: 6
+22:23:11.629 > I (592) wifi_init: accept mbox: 6
+22:23:11.629 > I (602) wifi_init: tcpip mbox: 32
+22:23:11.629 > I (602) wifi_init: udp mbox: 6
+22:23:11.632 > I (602) wifi_init: tcp mbox: 6
+22:23:11.632 > I (602) wifi_init: tcp tx win: 5760
+22:23:11.639 > I (612) wifi_init: tcp rx win: 5760
+22:23:11.639 > I (612) wifi_init: tcp mss: 1440
+22:23:11.643 > I (612) wifi_init: WiFi IRAM OP enabled
+22:23:11.643 > I (622) wifi_init: WiFi RX IRAM OP enabled
+22:23:11.666 > I (652) phy_init: phy_version 4863,a3a4459,Oct 28 2025,14:30:06
+22:23:11.747 > I (732) phy_init: Saving new calibration data due to checksum failure or outdated calibration data, mode(0)
+22:23:11.768 > I (752) wifi:mode : sta (30:76:f5:90:99:a0)
+22:23:11.768 > I (752) wifi:enable tsf
+22:23:11.776 > I (752) main: wifi state = 0
+22:23:11.776 > I (762) main_task: Returned from app_main()
+22:23:12.290 > I (1272) wifi:new:<3,0>, old:<1,0>, ap:<255,255>, sta:<3,0>, prof:1, snd_ch_cfg:0x0
+22:23:12.296 > I (1272) wifi:state: init -> auth (0xb0)
+22:23:12.301 > I (1282) wifi:state: auth -> assoc (0x0)
+22:23:12.317 > I (1302) wifi:state: assoc -> run (0x10)
+22:23:14.654 > W (3642) pzem: read failed: ESP_ERR_TIMEOUT
+22:23:18.361 > I (7342) wifi:state: run -> init (0xf00)
+22:23:18.414 > I (7362) wifi:new:<3,0>, old:<3,0>, ap:<255,255>, sta:<3,0>, prof:1, snd_ch_cfg:0x0
+22:23:18.414 > W (7362) wifi_mgr: disconnected, reason=15, attempt 1
+22:23:18.414 > I (7362) wifi_mgr: next attempt in 2s
+22:23:18.414 > I (7362) main: wifi state = 2
+22:23:20.382 > I (9362) main: wifi state = 0
+22:23:22.802 > W (11782) wifi_mgr: disconnected, reason=205, attempt 2
+22:23:22.803 > I (11782) wifi_mgr: next attempt in 4s
+22:23:22.808 > I (11782) main: wifi state = 2
+22:23:26.800 > I (15782) main: wifi state = 0
+22:23:26.823 > I (15802) wifi:new:<3,0>, old:<3,0>, ap:<255,255>, sta:<3,0>, prof:1, snd_ch_cfg:0x0
+22:23:26.829 > I (15802) wifi:state: init -> auth (0xb0)
+22:23:26.841 > I (15822) wifi:state: auth -> assoc (0x0)
+22:23:26.851 > I (15832) wifi:state: assoc -> run (0x10)
+22:23:32.893 > I (21872) wifi:state: run -> init (0xf00)
+22:23:32.907 > I (21892) wifi:new:<3,0>, old:<3,0>, ap:<255,255>, sta:<3,0>, prof:1, snd_ch_cfg:0x0
+22:23:32.920 > W (21892) wifi_mgr: disconnected, reason=15, attempt 3
+22:23:32.920 > I (21892) wifi_mgr: next attempt in 8s
+22:23:32.920 > I (21892) main: wifi state = 2
+22:23:40.912 > I (29892) main: wifi state = 0
+22:23:43.332 > W (32312) wifi_mgr: disconnected, reason=205, attempt 4
+22:23:43.332 > I (32312) wifi_mgr: next attempt in 16s
+22:23:43.345 > I (32312) main: wifi state = 2
+22:23:59.328 > I (48312) main: wifi state = 0
+22:23:59.342 > I (48322) wifi:new:<3,0>, old:<3,0>, ap:<255,255>, sta:<3,0>, prof:1, snd_ch_cfg:0x0
+22:23:59.348 > I (48322) wifi:state: init -> auth (0xb0)
+22:23:59.358 > I (48342) wifi:state: auth -> assoc (0x0)
+22:23:59.383 > I (48372) wifi:state: assoc -> run (0x10)
+22:24:05.410 > I (54392) wifi:state: run -> init (0xf00)
+22:24:05.417 > I (54402) wifi:new:<3,0>, old:<3,0>, ap:<255,255>, sta:<3,0>, prof:1, snd_ch_cfg:0x0
+22:24:05.423 > W (54402) wifi_mgr: disconnected, reason=15, attempt 5
+22:24:05.428 > I (54402) wifi_mgr: next attempt in 32s
+22:24:05.428 > I (54402) main: wifi state = 2
+22:24:16.753 > W (65742) pzem: read failed: ESP_ERR_TIMEOUT
+22:24:37.422 > I (86412) main: wifi state = 0
+22:24:39.841 > W (88822) wifi_mgr: disconnected, reason=205, attempt 6
+22:24:39.843 > I (88822) wifi_mgr: next attempt in 60s
+22:24:39.847 > I (88822) main: wifi state = 2
+22:25:18.851 > W (127842) pzem: read failed: ESP_ERR_TIMEOUT
+22:25:39.839 > I (148822) main: wifi state = 0
+22:25:39.851 > I (148832) wifi:new:<3,0>, old:<3,0>, ap:<255,255>, sta:<3,0>, prof:1, snd_ch_cfg:0x0
+22:25:39.859 > I (148842) wifi:state: init -> auth (0xb0)
+22:25:39.866 > I (148852) wifi:state: auth -> assoc (0x0)
+22:25:39.876 > I (148862) wifi:state: assoc -> run (0x10)
+22:25:42.922 > I (151912) wifi:state: run -> init (0xf00)
+22:25:42.922 > I (151922) wifi:new:<3,0>, old:<3,0>, ap:<255,255>, sta:<3,0>, prof:1, snd_ch_cfg:0x0
+22:25:42.941 > W (151922) wifi_mgr: disconnected, reason=15, attempt 7
+22:25:42.951 > I (151922) wifi_mgr: next attempt in 60s
+22:25:42.951 > I (151922) main: wifi state = 2
+22:26:20.950 > W (189942) pzem: read failed: ESP_ERR_TIMEOUT
+22:26:42.939 > I (211932) main: wifi state = 0
+22:26:45.359 > W (214342) wifi_mgr: disconnected, reason=205, attempt 8
+22:26:45.359 > I (214342) wifi_mgr: next attempt in 60s
+22:26:45.364 > I (214342) main: wifi state = 2
+22:27:23.049 > W (252042) pzem: read failed: ESP_ERR_TIMEOUT
+22:27:45.355 > I (274342) main: wifi state = 0
+22:27:45.372 > I (274362) wifi:new:<3,0>, old:<3,0>, ap:<255,255>, sta:<3,0>, prof:1, snd_ch_cfg:0x0
+22:27:45.378 > I (274362) wifi:state: init -> auth (0xb0)
+22:27:45.384 > I (274372) wifi:state: auth -> assoc (0x0)
+22:27:45.394 > I (274382) wifi:state: assoc -> run (0x10)
+22:27:51.424 > I (280412) wifi:state: run -> init (0xf00)
+22:27:51.431 > I (280422) wifi:new:<3,0>, old:<3,0>, ap:<255,255>, sta:<3,0>, prof:1, snd_ch_cfg:0x0
+22:27:51.438 > W (280422) wifi_mgr: disconnected, reason=15, attempt 9
+22:27:51.443 > I (280422) wifi_mgr: next attempt in 60s
+22:27:51.443 > I (280422) main: wifi state = 2
+22:28:25.148 > W (314142) pzem: read failed: ESP_ERR_TIMEOUT
+22:28:51.429 > I (340432) main: wifi state = 0
+22:28:53.857 > W (342842) wifi_mgr: disconnected, reason=205, attempt 10
+22:28:53.858 > E (342842) wifi_mgr: 10 attempts failed -> AP required
+22:28:53.862 > I (342842) main: wifi state = 3
+22:28:53.868 > I (342852) wifi:mode : sta (30:76:f5:90:99:a0) + softAP (30:76:f5:90:99:a1)
+22:28:53.876 > I (342852) wifi:Total power save buffer number: 16
+22:28:53.879 > I (342862) wifi:Init max length of beacon: 752/752
+22:28:53.885 > I (342862) wifi:Init max length of beacon: 752/752
+22:28:53.896 > I (342882) wifi:Total power save buffer number: 16
+22:28:53.900 > I (342882) portal: AP 'eMeter32-99a0' started, IP 192.168.4.1
+22:28:53.900 > I (342892) esp_netif_lwip: DHCP server started on interface WIFI_AP_DEF with IP: 192.168.4.1
+22:28:53.916 > I (342892) esp_netif_lwip: DHCP server started on interface WIFI_AP_DEF with IP: 192.168.4.1
+22:28:53.916 > I (342902) portal: http server started
+22:29:17.009 > I (366002) wifi:new:<1,1>, old:<1,1>, ap:<1,1>, sta:<3,0>, prof:1, snd_ch_cfg:0x0
+22:29:17.018 > I (366002) wifi:station: 98:43:fa:6a:a7:57 join, AID=1, bgn, 40U
+22:29:18.830 > I (367822) wifi:<ba-add>idx:2 (ifx:1, 98:43:fa:6a:a7:57), tid:0, ssn:38, winSize:64
+22:29:20.517 > I (369502) esp_netif_lwip: DHCP server assigned IP to a client, IP is: 192.168.4.2
+22:29:23.298 > W (372292) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:29:23.657 > W (372642) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:29:24.120 > W (373112) httpd_uri: httpd_uri: URI '/redirect' not found
+22:29:27.247 > W (376242) pzem: read failed: ESP_ERR_TIMEOUT
+22:29:27.464 > W (376452) httpd_uri: httpd_uri: URI '/favicon.ico' not found
+22:29:52.311 > I (401302) portal: settings saved, restarting
+22:29:52.424 > W (401412) httpd_uri: httpd_uri: URI '/favicon.ico' not found
+22:29:53.767 > W (402762) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:29:54.105 > W (403092) httpd_uri: httpd_uri: URI '/connecttest.txt' not found
+22:29:54.315 > I (403302) wifi:station: 98:43:fa:6a:a7:57 leave, AID = 1, reason = 2, bss_flags is 33786979, bss:0x3ffba104
+22:29:54.415 > I (403302) wifi:new:<1,0>, old:<1,1>, ap:<1,1>, sta:<3,0>, prof:1, snd_ch_cfg:0x0
+22:29:54.456 > I (403312) wifi:<ba-del>idx:2, tid:0
+22:29:54.456 > I (403312) wifi:new:<1,1>, old:<1,0>, ap:<1,1>, sta:<3,0>, prof:1, snd_ch_cfg:0x0
+22:29:54.456 > W (403322) httpd_txrx: httpd_sock_err: error in recv : 113
+22:29:54.456 > W (403332) httpd_txrx: httpd_sock_err: error in recv : 113
+22:29:54.456 > W (403332) httpd_txrx: httpd_sock_err: error in recv : 113
+22:29:54.456 > W (403342) httpd_txrx: httpd_sock_err: error in recv : 113
+22:29:54.456 > I (403382) wifi:flush txq
+22:29:54.456 > I (403382) wifi:stop sw txq
+22:29:54.456 > I (403382) wifi:lmac stop hw txq
+22:29:54.456 > ets Jul 29 2019 12:21:46
+22:29:54.456 > 
+22:29:54.456 > rst:0xc (SW_CPU_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+22:29:54.456 > configsip: 0, SPIWP:0xee
+22:29:54.456 > clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+22:29:54.456 > mode:DIO, clock div:2
+22:29:54.456 > load:0x3fff0030,len:6280
+22:29:54.456 > load:0x40078000,len:15864
+22:29:55.262 > load:0x40080400,len:3920
+22:29:55.262 >   #0  0x40080400 in _invalid_pc_placeholder at C:\Users\Vals\.platformio\packages\framework-espidf\components\xtensa/xtensa_vectors.S:2235
+22:29:55.262 > 
+22:29:55.262 > entry 0x4008063c
+22:29:55.262 > I (27) boot: ESP-IDF 5.5.3 2nd stage bootloader
+22:29:55.262 > I (27) boot: compile time Oct 10 2026 22:01:40
+22:29:55.262 > I (27) boot: Multicore bootloader
+22:29:55.262 > I (29) boot: chip revision: v3.1
+22:29:55.262 > I (31) boot.esp32: SPI Speed      : 40MHz
+22:29:55.262 > I (35) boot.esp32: SPI Mode       : DIO
+22:29:55.262 > I (39) boot.esp32: SPI Flash Size : 4MB
+22:29:55.262 > I (42) boot: Enabling RNG early entropy source...
+22:29:55.262 > I (47) boot: Partition Table:
+22:29:55.262 > I (49) boot: ## Label            Usage          Type ST Offset   Length
+22:29:55.262 > I (56) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+22:29:55.263 > I (62) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+22:29:55.263 > I (69) boot:  2 factory          factory app      00 00 00010000 00100000
+22:29:55.263 > I (75) boot: End of partition table
+22:29:55.263 > I (79) esp_image: segment 0: paddr=00010020 vaddr=3f400020 size=203d0h (132048) map
+22:29:55.263 > I (131) esp_image: segment 1: paddr=000303f8 vaddr=3ffb0000 size=043b8h ( 17336) load
+22:29:55.263 > I (138) esp_image: segment 2: paddr=000347b8 vaddr=40080000 size=0b860h ( 47200) load
+22:29:55.263 > I (156) esp_image: segment 3: paddr=00040020 vaddr=400d0020 size=98214h (623124) map
+22:29:55.263 > I (370) esp_image: segment 4: paddr=000d823c vaddr=4008b860 size=0db68h ( 56168) load
+22:29:55.263 > I (392) esp_image: segment 5: paddr=000e5dac vaddr=50000000 size=00020h (    32) load
+22:29:55.263 > I (404) boot: Loaded app from partition at offset 0x10000
+22:29:55.263 > I (404) boot: Disabling RNG early entropy source...
+22:29:55.263 > I (415) cpu_start: Multicore app
+22:29:55.263 > I (423) cpu_start: GPIO 3 and 1 are used as console UART I/O pins
+22:29:55.263 > I (423) cpu_start: Pro cpu start user code
+22:29:55.263 > I (423) cpu_start: cpu freq: 160000000 Hz
+22:29:55.263 > I (425) app_init: Application information:
+22:29:55.263 > I (429) app_init: Project name:     eMeter32
+22:29:55.263 > I (433) app_init: App version:      1.0.0
+22:29:55.263 > I (437) app_init: Compile time:     Oct 10 2026 21:56:39
+22:29:55.263 > I (442) app_init: ELF file SHA256:  d8b8e2947...
+22:29:55.263 > I (446) app_init: ESP-IDF:          5.5.3
+22:29:55.263 > I (450) efuse_init: Min chip rev:     v0.0
+22:29:55.263 > I (454) efuse_init: Max chip rev:     v3.99 
+22:29:55.263 > I (458) efuse_init: Chip rev:         v3.1
+22:29:55.263 > I (462) heap_init: Initializing. RAM available for dynamic allocation:
+22:29:55.263 > I (468) heap_init: At 3FFAE6E0 len 00001920 (6 KiB): DRAM
+22:29:55.263 > I (473) heap_init: At 3FFB8D50 len 000272B0 (156 KiB): DRAM
+22:29:55.263 > I (478) heap_init: At 3FFE0440 len 00003AE0 (14 KiB): D/IRAM
+22:29:55.263 > I (483) heap_init: At 3FFE4350 len 0001BCB0 (111 KiB): D/IRAM
+22:29:55.263 > I (489) heap_init: At 400993C8 len 00006C38 (27 KiB): IRAM
+22:29:55.263 > I (496) spi_flash: detected chip: generic
+22:29:55.263 > I (498) spi_flash: flash io: dio
+22:29:55.263 > I (502) main_task: Started on CPU0
+22:29:55.263 > I (512) main_task: Calling app_main()
+22:29:55.263 > I (542) settings: loaded from NVS (ssid='private-koptevo-wlan-bgn')
+22:29:55.263 > E (542) oled: display not found at 0x3C (check wiring/address)
+22:29:55.263 > W (542) main: display not available, continuing without it
+22:29:55.263 > I (562) wifi:wifi driver task: 3ffc26cc, prio:23, stack:6656, core=0
+22:29:55.263 > I (572) wifi:wifi firmware version: 4df78f2
+22:29:55.263 > I (572) wifi:wifi certification version: v7.0
+22:29:55.263 > I (582) wifi:config NVS flash: enabled
+22:29:55.263 > I (582) wifi:config nano formatting: disabled
+22:29:55.263 > I (582) wifi:Init data frame dynamic rx buffer num: 32
+22:29:55.263 > I (582) wifi:Init static rx mgmt buffer num: 5
+22:29:55.263 > I (592) wifi:Init management short buffer num: 32
+22:29:55.263 > I (592) wifi:Init dynamic tx buffer num: 32
+22:29:55.263 > I (602) wifi:Init static rx buffer size: 1600
+22:29:55.263 > I (602) wifi:Init static rx buffer num: 10
+22:29:55.263 > I (602) wifi:Init dynamic rx buffer num: 32
+22:29:55.263 > I (612) wifi_init: rx ba win: 6
+22:29:55.263 > I (612) wifi_init: accept mbox: 6
+22:29:55.263 > I (612) wifi_init: tcpip mbox: 32
+22:29:55.263 > I (622) wifi_init: udp mbox: 6
+22:29:55.263 > I (622) wifi_init: tcp mbox: 6
+22:29:55.263 > I (622) wifi_init: tcp tx win: 5760
+22:29:55.263 > I (632) wifi_init: tcp rx win: 5760
+22:29:55.263 > I (632) wifi_init: tcp mss: 1440
+22:29:55.263 > I (632) wifi_init: WiFi IRAM OP enabled
+22:29:55.263 > I (642) wifi_init: WiFi RX IRAM OP enabled
+22:29:55.263 > I (712) phy_init: phy_version 4863,a3a4459,Oct 28 2025,14:30:06
+22:29:55.263 > I (792) phy_init: Saving new calibration data due to checksum failure or outdated calibration data, mode(0)
+22:29:55.263 > I (812) wifi:mode : sta (30:76:f5:90:99:a0)
+22:29:55.263 > I (812) wifi:enable tsf
+22:29:55.263 > I (812) main: wifi state = 0
+22:29:55.263 > I (812) main_task: Returned from app_main()
+22:29:55.723 > I (1322) wifi:new:<3,0>, old:<1,0>, ap:<255,255>, sta:<3,0>, prof:1, snd_ch_cfg:0x0
+22:29:55.728 > I (1322) wifi:state: init -> auth (0xb0)
+22:29:55.728 > I (1332) wifi:state: auth -> assoc (0x0)
+22:29:55.738 > I (1332) wifi:state: assoc -> run (0x10)
+22:29:55.798 > I (1402) wifi:connected with private-koptevo-wlan-bgn, aid = 2, channel 3, BW20, bssid = b8:fb:b3:a6:4c:f2
+22:29:55.805 > I (1402) wifi:security: WPA2-PSK, phy: bgn, rssi: -57
+22:29:55.881 > I (1482) wifi:pm start, type: 1
+22:29:55.882 > 
+22:29:55.882 > I (1482) wifi:dp: 1, bi: 102400, li: 3, scale listen interval from 307200 us to 307200 us
+22:29:55.887 > I (1482) wifi:AP's beacon interval = 102400 us, DTIM period = 1
+22:29:56.570 > I (2172) wifi:<ba-add>idx:0 (ifx:0, b8:fb:b3:a6:4c:f2), tid:0, ssn:3, winSize:64
+22:29:57.969 > I (3572) esp_netif_handlers: sta ip: 192.168.254.52, mask: 255.255.255.0, gw: 192.168.254.254
+22:29:57.976 > I (3572) wifi_mgr: got IP 192.168.254.52
+22:29:57.979 > I (3572) main: wifi state = 1
+22:29:58.047 > W (3652) pzem: read failed: ESP_ERR_TIMEOUT
+22:31:00.146 > W (65752) pzem: read failed: ESP_ERR_TIMEOUT
+22:32:02.244 > W (127852) pzem: read failed: ESP_ERR_TIMEOUT
+22:33:04.343 > W (189952) pzem: read failed: ESP_ERR_TIMEOUT
+22:34:06.442 > W (252052) pzem: read failed: ESP_ERR_TIMEOUT
+22:35:08.540 > W (314152) pzem: read failed: ESP_ERR_TIMEOUT
+22:36:10.639 > W (376252) pzem: read failed: ESP_ERR_TIMEOUT
+22:37:12.737 > W (438352) pzem: read failed: ESP_ERR_TIMEOUT
+22:38:14.837 > W (500452) pzem: read failed: ESP_ERR_TIMEOUT
+22:39:16.935 > W (562552) pzem: read failed: ESP_ERR_TIMEOUT
+22:40:19.034 > W (624652) pzem: read failed: ESP_ERR_TIMEOUT
+22:41:21.133 > W (686752) pzem: read failed: ESP_ERR_TIMEOUT
+22:42:23.220 > W (748852) pzem: read failed: ESP_ERR_TIMEOUT
+22:43:25.329 > W (810952) pzem: read failed: ESP_ERR_TIMEOUT

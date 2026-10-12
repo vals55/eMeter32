@@ -1,0 +1,75 @@
+02:01:16.511 > ]����2: SPI Flash Size : 4MB
+02:01:16.511 > I (42) boot: Enabling RNG early entropy source...
+02:01:16.515 > I (47) boot: Partition Table:
+02:01:16.517 > I (49) boot: ## Label            Usage          Type ST Offset   Length
+02:01:16.522 > I (56) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+02:01:16.534 > I (62) boot:  1 phy_init         RF data          01 01 0000f000 00001000
+02:01:16.535 > I (69) boot:  2 factory          factory app      00 00 00010000 00100000
+02:01:16.541 > I (75) boot: End of partition table
+02:01:16.544 > I (79) esp_image: segment 0: paddr=00010020 vaddr=3f400020 size=1cafch (117500) map
+02:01:16.580 > I (126) esp_image: segment 1: paddr=0002cb24 vaddr=3ffb0000 size=034f4h ( 13556) load
+02:01:16.608 > I (132) esp_image: segment 2: paddr=00030020 vaddr=400d0020 size=90930h (592176) map
+02:01:16.788 > I (334) esp_image: segment 3: paddr=000c0958 vaddr=3ffb34f4 size=00ea4h (  3748) load
+02:01:16.796 > I (336) esp_image: segment 4: paddr=000c1804 vaddr=40080000 size=181b8h ( 98744) load
+02:01:16.830 > I (376) esp_image: segment 5: paddr=000d99c4 vaddr=50000000 size=00020h (    32) load
+02:01:16.842 > I (388) boot: Loaded app from partition at offset 0x10000
+02:01:16.851 > I (389) boot: Disabling RNG early entropy source...
+02:01:16.854 > I (399) cpu_start: Multicore app
+02:01:16.861 > I (407) cpu_start: GPIO 3 and 1 are used as console UART I/O pins
+02:01:16.868 > I (408) cpu_start: Pro cpu start user code
+02:01:16.872 > I (408) cpu_start: cpu freq: 160000000 Hz
+02:01:16.880 > I (409) app_init: Application information:
+02:01:16.880 > I (413) app_init: Project name:     eMeter32
+02:01:16.910 > I (417) app_init: App version:      1.0.0
+02:01:16.910 > I (421) app_init: Compile time:     Oct 10 2026 01:45:21
+02:01:16.910 > I (426) app_init: ELF file SHA256:  e60818c72...
+02:01:16.910 > I (430) app_init: ESP-IDF:          5.5.3
+02:01:16.910 > I (434) efuse_init: Min chip rev:     v0.0
+02:01:16.910 > I (438) efuse_init: Max chip rev:     v3.99 
+02:01:16.910 > I (442) efuse_init: Chip rev:         v3.1
+02:01:16.913 > I (446) heap_init: Initializing. RAM available for dynamic allocation:
+02:01:16.918 > I (452) heap_init: At 3FFAE6E0 len 00001920 (6 KiB): DRAM
+02:01:16.923 > I (457) heap_init: At 3FFB88C0 len 00027740 (157 KiB): DRAM
+02:01:16.928 > I (462) heap_init: At 3FFE0440 len 00003AE0 (14 KiB): D/IRAM
+02:01:16.940 > I (468) heap_init: At 3FFE4350 len 0001BCB0 (111 KiB): D/IRAM
+02:01:16.940 > I (473) heap_init: At 400981B8 len 00007E48 (31 KiB): IRAM
+02:01:16.962 > I (480) spi_flash: detected chip: generic
+02:01:16.962 > I (482) spi_flash: flash io: dio
+02:01:16.962 > I (486) main_task: Started on CPU0
+02:01:16.962 > I (496) main_task: Calling app_main()
+02:01:16.978 > W (516) settings: no valid settings, using defaults
+02:01:17.009 > I (536) wifi:wifi driver task: 3ffc0790, prio:23, stack:6656, core=0
+02:01:17.009 > I (546) wifi:wifi firmware version: 4df78f2
+02:01:17.009 > I (546) wifi:wifi certification version: v7.0
+02:01:17.013 > I (546) wifi:config NVS flash: enabled
+02:01:17.013 > I (546) wifi:config nano formatting: disabled
+02:01:17.029 > I (546) wifi:Init data frame dynamic rx buffer num: 32
+02:01:17.029 > I (556) wifi:Init static rx mgmt buffer num: 5
+02:01:17.029 > I (556) wifi:Init management short buffer num: 32
+02:01:17.044 > I (556) wifi:Init dynamic tx buffer num: 32
+02:01:17.044 > I (566) wifi:Init static rx buffer size: 1600
+02:01:17.044 > I (566) wifi:Init static rx buffer num: 10
+02:01:17.044 > I (576) wifi:Init dynamic rx buffer num: 32
+02:01:17.047 > I (576) wifi_init: rx ba win: 6
+02:01:17.053 > I (576) wifi_init: accept mbox: 6
+02:01:17.053 > I (586) wifi_init: tcpip mbox: 32
+02:01:17.056 > I (586) wifi_init: udp mbox: 6
+02:01:17.063 > I (586) wifi_init: tcp mbox: 6
+02:01:17.063 > I (586) wifi_init: tcp tx win: 5760
+02:01:17.079 > I (596) wifi_init: tcp rx win: 5760
+02:01:17.079 > I (596) wifi_init: tcp mss: 1440
+02:01:17.079 > I (596) wifi_init: WiFi IRAM OP enabled
+02:01:17.079 > I (606) wifi_init: WiFi RX IRAM OP enabled
+02:01:17.079 > W (606) wifi_mgr: SSID not configured -> AP required
+02:01:17.094 > I (616) main: wifi state = 3
+02:01:17.094 > I (616) main_task: Returned from app_main()
+02:01:17.094 > I (626) portal: AP 'eMeter32-c678' started, IP 192.168.4.1
+02:01:17.094 > I (626) phy_init: phy_version 4863,a3a4459,Oct 28 2025,14:30:06
+02:01:17.169 > I (706) phy_init: Saving new calibration data due to checksum failure or outdated calibration data, mode(0)
+02:01:17.194 > I (736) wifi:mode : sta (a0:a3:b3:2f:c6:78) + softAP (a0:a3:b3:2f:c6:79)
+02:01:17.205 > I (736) wifi:enable tsf
+02:01:17.205 > I (736) wifi:Total power save buffer number: 16
+02:01:17.228 > I (736) wifi:Init max length of beacon: 752/752
+02:01:17.228 > I (746) wifi:Init max length of beacon: 752/752
+02:01:17.228 > I (746) esp_netif_lwip: DHCP server started on interface WIFI_AP_DEF with IP: 192.168.4.1
+02:01:17.228 > I (756) portal: http server started
