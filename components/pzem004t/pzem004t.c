@@ -97,6 +97,10 @@ esp_err_t pzem_reset_energy(void) {
 }
 
 void pzem_get_last(pzem_data_t *out) {
+    if (!s_mutex) {                 /* pzem_start() ещё не вызывался */
+        memset(out, 0, sizeof(*out));
+        return;
+    }
     xSemaphoreTake(s_mutex, portMAX_DELAY);
     *out = s_last;
     xSemaphoreGive(s_mutex);
@@ -150,5 +154,7 @@ esp_err_t pzem_start(uart_port_t uart, gpio_num_t tx, gpio_num_t rx) {
     return xTaskCreate(pzem_task, "pzem", 3072, NULL, 4, &s_task) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
 }
 
+ 
+ 
  
  

@@ -76,11 +76,12 @@ void app_main(void) {
     ESP_ERROR_CHECK(settings_init());
     ntp_sync_init();      /* часовой пояс из настроек, сеть не нужна */
 
-    if (display_ui_start() != ESP_OK) {
-        ESP_LOGW(TAG, "display not available, continuing without it");
-    }
+    /* PZEM раньше дисплея: задача экрана сразу читает pzem_get_last(), мьютекс должен уже существовать */
     if (pzem_start(PZEM_UART, PIN_PZEM_TX, PIN_PZEM_RX) != ESP_OK) {
         ESP_LOGW(TAG, "pzem start failed");
+    }
+    if (display_ui_start() != ESP_OK) {
+        ESP_LOGW(TAG, "display not available, continuing without it");
     }
     pulses_start();
     ota_update_init();
@@ -92,5 +93,7 @@ void app_main(void) {
     ESP_ERROR_CHECK(user_button_start(PIN_PORTAL_BUTTON, PORTAL_BUTTON_HOLD_MS, on_portal_button));
 }
 
+ 
+ 
  
  
