@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 # ⚡ eMeter32
 
@@ -76,6 +76,21 @@
 
 > [!NOTE]
 > Проверьте выводы по маркировке своей платы. Если вы меняете схему, достаточно поправить `board_config.h`.
+
+### Сборка, корпус и платы
+
+![eMeter32 в корпусе](docs/images/assembly.png)
+
+**Схема платы компараторов** (нажмите, чтобы открыть PDF):
+
+[![Схема платы компараторов](hardware/comparator-board/schematic/Schematic_Comparator_2026-10-16.png)](hardware/comparator-board/schematic/Schematic_Comparator_2026-10-16.pdf)
+
+| Что | Где |
+|---|---|
+| Корпус (STL-модели, заметки по печати и сборке) | [`hardware/enclosure`](hardware/enclosure/README.ru.md) ([EN](hardware/enclosure)) |
+| Описание платы компараторов | [`hardware/comparator-board`](hardware/comparator-board/README.ru.md) ([EN](hardware/comparator-board)) |
+| Схема (PDF) | [`hardware/comparator-board/schematic/Schematic_Comparator_2026-10-16.pdf`](hardware/comparator-board/schematic/Schematic_Comparator_2026-10-16.pdf) |
+| Gerber-файлы для производства платы | [`hardware/comparator-board/pcb/Gerber_Comparator_PCB_Comparator_2026-10-04.zip`](hardware/comparator-board/pcb/Gerber_Comparator_PCB_Comparator_2026-10-04.zip) |
 
 ## 🏗 Архитектура
 
@@ -162,29 +177,32 @@ flowchart LR
 ## 📁 Структура репозитория
 
 ```text
-eMeter32/
+.
+├── .github/                 # issue and pull request templates
+├── components/              # firmware components (ESP-IDF)
+│   ├── board_config/
+│   ├── captive_portal/
+│   ├── display_ui/
+│   ├── ha_discovery/
+│   ├── mqtt_mgr/
+│   ├── ntp_sync/
+│   ├── oled/
+│   ├── ota_update/
+│   ├── pulse_counter/
+│   ├── pzem004t/
+│   ├── settings/
+│   ├── stats_push/
+│   ├── user_button/
+│   └── wifi_mgr/
+├── docs/images/             # photos and pictures for the documentation
+├── hardware/
+│   ├── comparator-board/    # schematic and PCB (Gerber)
+│   └── enclosure/           # STL models of the enclosure
+├── src/                     # main.c
 ├── CMakeLists.txt
-├── platformio.ini
 ├── partitions.csv
-├── sdkconfig.defaults
-├── src/
-│   ├── CMakeLists.txt
-│   └── main.c
-└── components/
-    ├── board_config/
-    ├── captive_portal/
-    ├── display_ui/
-    ├── ha_discovery/
-    ├── mqtt_mgr/
-    ├── ntp_sync/
-    ├── oled/
-    ├── ota_update/
-    ├── pulse_counter/
-    ├── pzem004t/
-    ├── settings/
-    ├── stats_push/
-    ├── user_button/
-    └── wifi_mgr/
+├── platformio.ini
+└── sdkconfig.defaults
 ```
 
 ## 🚀 Быстрый старт
@@ -311,16 +329,15 @@ pio run -e release -t upload
 ## 🗺 План развития
 
 - [ ] Проверка прототипа на реальном оборудовании
-- [ ] Схемы и фото устройства
-- [ ] Печатный корпус
+- [x] Схемы и фото устройства
+- [x] Печатный корпус
 
 ## 🤝 Участие в разработке
 
-Предложения и замечания приветствуются: создавайте [Issue](../../issues) или присылайте [Pull Request](../../pulls). При изменении формата структуры настроек увеличивайте `SETTINGS_VERSION` в `settings.h`.
+Предложения и замечания приветствуются: создавайте [Issue](../../issues) или присылайте [Pull Request](../../pulls). Подробнее — в [CONTRIBUTING.md](CONTRIBUTING.md). При изменении формата структуры настроек увеличивайте `SETTINGS_VERSION` в `settings.h`.
 
 ## 📄 Лицензия
 
 Проект распространяется под лицензией **MIT**. Подробности смотрите в файле [`LICENSE`](LICENSE).
 
 © 2026 vals. Vals home Lab.
-

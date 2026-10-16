@@ -46,7 +46,7 @@ The first flash after a change of the partition table must be done over a cable.
 
 ## Pull requests
 
-1. Fork the repository and create a branch from `main` (for example `fix/pzem-timeout` or `feature/new-sensor`).
+1. Fork the repository and create a branch from `master` (for example `fix/pzem-timeout` or `feature/new-sensor`).
 2. Keep the change focused: one topic per pull request.
 3. Build the project (`pio run`) without new warnings and, if possible, test on real hardware.
 4. Update the documentation (README, comments) and `CHANGELOG.md` when behaviour changes.

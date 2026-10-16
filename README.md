@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 # ⚡ eMeter32
 
@@ -76,6 +76,21 @@ All pin assignments are in one file: [`board_config.h`](components/board_config/
 
 > [!NOTE]
 > Check the pins against the markings on your board. If you change the wiring, edit `board_config.h`.
+
+### Assembly, enclosure and boards
+
+![eMeter32 assembled in the enclosure](docs/images/assembly.png)
+
+**Comparator board schematic** (click to open the PDF):
+
+[![Comparator board schematic](hardware/comparator-board/schematic/Schematic_Comparator_2026-10-16.png)](hardware/comparator-board/schematic/Schematic_Comparator_2026-10-16.pdf)
+
+| Item | Location |
+|---|---|
+| Enclosure (STL models, print and assembly notes) | [`hardware/enclosure`](hardware/enclosure) ([RU](hardware/enclosure/README.ru.md)) |
+| Comparator board description | [`hardware/comparator-board`](hardware/comparator-board) ([RU](hardware/comparator-board/README.ru.md)) |
+| Schematic (PDF) | [`hardware/comparator-board/schematic/Schematic_Comparator_2026-10-16.pdf`](hardware/comparator-board/schematic/Schematic_Comparator_2026-10-16.pdf) |
+| Gerber files for PCB manufacturing | [`hardware/comparator-board/pcb/Gerber_Comparator_PCB_Comparator_2026-10-04.zip`](hardware/comparator-board/pcb/Gerber_Comparator_PCB_Comparator_2026-10-04.zip) |
 
 ## 🏗 Architecture
 
@@ -162,29 +177,32 @@ The display driver and the font were written from scratch and live in the `oled`
 ## 📁 Repository structure
 
 ```text
-eMeter32/
+.
+├── .github/                 # issue and pull request templates
+├── components/              # firmware components (ESP-IDF)
+│   ├── board_config/
+│   ├── captive_portal/
+│   ├── display_ui/
+│   ├── ha_discovery/
+│   ├── mqtt_mgr/
+│   ├── ntp_sync/
+│   ├── oled/
+│   ├── ota_update/
+│   ├── pulse_counter/
+│   ├── pzem004t/
+│   ├── settings/
+│   ├── stats_push/
+│   ├── user_button/
+│   └── wifi_mgr/
+├── docs/images/             # photos and pictures for the documentation
+├── hardware/
+│   ├── comparator-board/    # schematic and PCB (Gerber)
+│   └── enclosure/           # STL models of the enclosure
+├── src/                     # main.c
 ├── CMakeLists.txt
-├── platformio.ini
 ├── partitions.csv
-├── sdkconfig.defaults
-├── src/
-│   ├── CMakeLists.txt
-│   └── main.c
-└── components/
-    ├── board_config/
-    ├── captive_portal/
-    ├── display_ui/
-    ├── ha_discovery/
-    ├── mqtt_mgr/
-    ├── ntp_sync/
-    ├── oled/
-    ├── ota_update/
-    ├── pulse_counter/
-    ├── pzem004t/
-    ├── settings/
-    ├── stats_push/
-    ├── user_button/
-    └── wifi_mgr/
+├── platformio.ini
+└── sdkconfig.defaults
 ```
 
 ## 🚀 Getting started
@@ -311,16 +329,15 @@ Both `http://` and `https://` addresses are supported. If the address field is e
 ## 🗺 Roadmap
 
 - [ ] Test the prototype on real hardware
-- [ ] Schematics and photos of the device
-- [ ] 3D-printed enclosure
+- [x] Schematics and photos of the device
+- [x] 3D-printed enclosure
 
 ## 🤝 Contributing
 
-Suggestions and bug reports are welcome: open an [issue](../../issues) or send a [pull request](../../pulls). When you change the settings structure, increase `SETTINGS_VERSION` in `settings.h`.
+Suggestions and bug reports are welcome: open an [issue](../../issues) or send a [pull request](../../pulls). See [CONTRIBUTING.md](CONTRIBUTING.md). When you change the settings structure, increase `SETTINGS_VERSION` in `settings.h`.
 
 ## 📄 License
 
 This project is licensed under the **MIT** license. See the [`LICENSE`](LICENSE) file for details.
 
 © 2026 vals. Vals home Lab.
-
