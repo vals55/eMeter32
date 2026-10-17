@@ -92,6 +92,33 @@ All pin assignments are in one file: [`board_config.h`](components/board_config/
 | Schematic (PDF) | [`hardware/comparator-board/schematic/Schematic_Comparator_2026-10-16.pdf`](hardware/comparator-board/schematic/Schematic_Comparator_2026-10-16.pdf) |
 | Gerber files for PCB manufacturing | [`hardware/comparator-board/pcb/Gerber_Comparator_PCB_Comparator_2026-10-04.zip`](hardware/comparator-board/pcb/Gerber_Comparator_PCB_Comparator_2026-10-04.zip) |
 
+## 🖥 Display
+
+The SSD1306 screen refreshes once a second. The top 16 pixel rows (yellow zone) show the Wi-Fi status and the IP address. The rest of the screen (blue zone) shows the mains readings.
+
+![Display layout](docs/images/display.png)
+
+*Layout preview with sample values (the image is a mock-up, not a photo).*
+
+| Line | Content | Format |
+|---|---|---|
+| 1 | `U` voltage, `F` frequency | `%.1fV`, `%.1fHz` |
+| 2 | `I` current, `PF` power factor | `%.1fA`, `%.2f` |
+| 3 | Active power (double-size font) | `%.1fW` |
+| 4 | Energy; at the right edge, the age of the last PZEM reading (`5s`, `2m`, `1h`) | `%.3fkWh` |
+
+If the PZEM stops answering, `ERR` appears before the data age. Before the first answer the screen shows `PZEM: waiting...`, and `PZEM: no answer` if there are errors and no data.
+
+**Decimal point alignment.** The numbers are drawn by `text_at_dot()` in [`display_ui.c`](components/display_ui/display_ui.c). It places the `.` character at a fixed pixel column, so the point does not move when the number of digits changes.
+
+| Reading | Decimal point position (x, px) |
+|---|---|
+| Voltage, current, energy | 36 |
+| Frequency, power factor | 96 |
+| Power (double size) | 48 |
+
+Digits to the left of the point: voltage and current up to 3, energy up to 5, power up to 4. For power of 10 kW and above the line is pressed to the left edge and the point shifts to the right.
+
 ## 🏗 Architecture
 
 The project is built from independent ESP-IDF components. Each one lives in `components/` and is registered through its own `CMakeLists.txt`.

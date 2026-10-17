@@ -75,7 +75,25 @@ static void draw_wifi_status(void) {
     oled_text(0, 9, b, 1);
 }
 
-/* Синяя зона (y 16..63): показания сети */
+/* Синяя зона (y 16..63): показания сети.
+ * Положение каждого числа задаётся по десятичной точке: меняется число цифр
+ * слева и справа, а сама точка остаётся на месте. */
+#define COL_LABEL     6    /* колонка букв U и I */
+#define DOT_UI        36   /* точка напряжения, тока и энергии */
+#define COL_RIGHT     72   /* левый край блока F / PF */
+#define DOT_RIGHT     96   /* точка частоты и коэффициента мощности */
+#define DOT_POWER     48   /* точка мощности (крупный шрифт) */
+#define CHAR_W        6    /* ширина знакоместа при масштабе 1 */
+
+/* Рисует строку s так, чтобы левый край символа '.' оказался в dot_x */
+static void text_at_dot(int dot_x, int y, const char *s, int scale) {
+    const char *p = strchr(s, '.');
+    int idx = p ? (int)(p - s) : (int)strlen(s);
+    int x = dot_x - idx * CHAR_W * scale;
+    if (x < 0) x = 0;
+    oled_text(x, y, s, scale);
+}
+
 static void draw_power(void) {
     pzem_data_t d;
     pzem_get_last(&d);
@@ -84,14 +102,24 @@ static void draw_power(void) {
         oled_text(0, 30, d.error_count ? "PZEM: no answer" : "PZEM: waiting...", 1);
         return;
     }
-    snprintf(l, sizeof(l), "%5.1fV  %4.1fHz", d.voltage, d.frequency);
-    oled_text(0, 19, l, 1);
-    snprintf(l, sizeof(l), "%6.3fA  PF %.2f", d.current, d.power_factor);
-    oled_text(0, 29, l, 1);
+    oled_text(COL_LABEL, 19, "U", 1);
+    snprintf(l, sizeof(l), "%.1fV", d.voltage);
+    text_at_dot(DOT_UI, 19, l, 1);
+    oled_text(COL_RIGHT, 19, "F", 1);
+    snprintf(l, sizeof(l), "%.1fHz", d.frequency);
+    text_at_dot(DOT_RIGHT, 19, l, 1);
+
+    oled_text(COL_LABEL, 29, "I", 1);
+    snprintf(l, sizeof(l), "%.1fA", d.current);
+    text_at_dot(DOT_UI, 29, l, 1);
+    oled_text(COL_RIGHT, 29, "PF", 1);
+    snprintf(l, sizeof(l), "%.2f", d.power_factor);
+    text_at_dot(DOT_RIGHT, 29, l, 1);
+
     snprintf(l, sizeof(l), "%.1fW", d.power);
-    oled_text(0, 39, l, 2);
+    text_at_dot(DOT_POWER, 39, l, 2);
     snprintf(l, sizeof(l), "%.3fkWh", d.energy_kwh);
-    oled_text(0, 56, l, 1);
+    text_at_dot(DOT_UI, 56, l, 1);
 
     char age[12];
     fmt_age(age, sizeof(age), esp_timer_get_time() / 1000 - d.timestamp_ms);
@@ -120,6 +148,3 @@ esp_err_t display_ui_start(void) {
     if (e != ESP_OK) return e;
     return xTaskCreate(ui_task, "display", 4096, NULL, 3, NULL) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
 }
-
- 
- 
