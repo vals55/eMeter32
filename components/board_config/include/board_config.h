@@ -17,7 +17,7 @@
 #define PIN_PZEM_RX          GPIO_NUM_16   /* RX платы <- TX PZEM (через делитель/конвертер уровней!) */
 
 /* Кнопка вызова портала настроек (между пином и GND) */
-#define PIN_PORTAL_BUTTON    GPIO_NUM_4
+#define PIN_PORTAL_BUTTON    GPIO_NUM_27
 #define PORTAL_BUTTON_HOLD_MS 3000
 
 /* Входы импульсов от компараторов LM393 (каналы энергии E1 и E2) */
