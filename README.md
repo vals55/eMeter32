@@ -79,7 +79,7 @@ All pin assignments are in one file: [`board_config.h`](components/board_config/
 
 ### Assembly, enclosure and boards
 
-![eMeter32 assembled in the enclosure](docs/images/assembly.png)
+![eMeter32 assembled in the enclosure](docs/images/assembly-2.png)
 
 **Comparator board schematic** (click to open the PDF):
 

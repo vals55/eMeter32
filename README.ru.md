@@ -79,7 +79,7 @@
 
 ### Сборка, корпус и платы
 
-![eMeter32 в корпусе](docs/images/assembly.png)
+![eMeter32 в корпусе](docs/images/assembly-2.png)
 
 **Схема платы компараторов** (нажмите, чтобы открыть PDF):
 
