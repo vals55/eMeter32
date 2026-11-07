@@ -23,6 +23,8 @@ dependencies.lock
 Thumbs.db
 desktop.ini
 *.bat
+*.zip
+*.txt
 
 # Local secrets (never commit Wi-Fi or MQTT credentials)
 *.secret

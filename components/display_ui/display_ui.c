@@ -1,3 +1,4 @@
+ 
 // Copyright 2026 vals. All rights reserved.
 // SPDX-License-Identifier: MIT
 #include "display_ui.h"
@@ -94,12 +95,30 @@ static void text_at_dot(int dot_x, int y, const char *s, int scale) {
     oled_text(x, y, s, scale);
 }
 
+#define SPLASH_MIN_MS    3000   /* минимальное время показа заставки после старта */
+#define NO_DATA_BOOT_MS  30000  /* сколько ждать первых данных, прежде чем написать No data */
+
+static bool s_data_valid = false;
+static bool s_ever_valid = false;
+
 static void draw_power(void) {
     pzem_data_t d;
     pzem_get_last(&d);
     char l[32];
-    if (!d.valid) {
-        oled_text(0, 30, d.error_count ? "PZEM: no answer" : "PZEM: waiting...", 1);
+    /* Заставка держится минимум SPLASH_MIN_MS; до первых валидных данных (не дольше
+     * NO_DATA_BOOT_MS после старта) показываем "Waiting data...", потом - "No data".
+     * После того как данные уже были и пропали, сразу "No data". */
+    int64_t up_ms = esp_timer_get_time() / 1000;
+    bool fresh = pzem_data_fresh(&d);
+    if (fresh) s_ever_valid = true;
+    s_data_valid = fresh && up_ms >= SPLASH_MIN_MS;
+    if (!s_data_valid) {
+        if (up_ms < SPLASH_MIN_MS || (!s_ever_valid && up_ms < NO_DATA_BOOT_MS)) {
+            oled_text(0, 30, "Init OK", 1);
+            oled_text(0, 40, "Waiting data...", 1);
+        } else {
+            oled_text(0, 30, "No data", 2);
+        }
         return;
     }
     oled_text(COL_LABEL, 19, "U", 1);
@@ -133,7 +152,7 @@ static void draw_power(void) {
 
 static void ui_task(void *arg) {
     for (;;) {
-        oled_clear();
+        oled_clear();   /* кадр рисуется заново: при смене заглушки на данные экран очищается сам */
         draw_wifi_status();
         draw_power();
         if (oled_flush() != ESP_OK) {
@@ -146,5 +165,10 @@ static void ui_task(void *arg) {
 esp_err_t display_ui_start(void) {
     esp_err_t e = oled_init(PIN_I2C_SDA, PIN_I2C_SCL, OLED_I2C_ADDR);
     if (e != ESP_OK) return e;
+    /* сразу показываем заставку, не дожидаясь первого цикла задачи */
+    oled_clear();
+    oled_text(0, 30, "Init OK", 1);
+    oled_text(0, 40, "Waiting data...", 1);
+    oled_flush();
     return xTaskCreate(ui_task, "display", 4096, NULL, 3, NULL) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
 }

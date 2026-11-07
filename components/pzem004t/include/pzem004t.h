@@ -1,3 +1,4 @@
+ 
 // Copyright 2026 vals. All rights reserved.
 // SPDX-License-Identifier: MIT
 #pragma once
@@ -28,12 +29,11 @@ typedef struct {
 esp_err_t pzem_start(uart_port_t uart, gpio_num_t tx, gpio_num_t rx);
 /* Копия последних данных (потокобезопасно) */
 void pzem_get_last(pzem_data_t *out);
+/* true, если данные актуальны: было успешное чтение, последний цикл без ошибок и данные не старше 2 периодов опроса + 10 с */
+bool pzem_data_fresh(const pzem_data_t *d);
 /* Запросить внеочередной опрос */
 void pzem_poll_now(void);
 /* Однократное блокирующее чтение (до 3 попыток) */
 esp_err_t pzem_read(pzem_data_t *out);
 /* Сброс накопленной энергии в модуле */
 esp_err_t pzem_reset_energy(void);
-
- 
- 

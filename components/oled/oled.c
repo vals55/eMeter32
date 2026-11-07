@@ -1,3 +1,4 @@
+ 
 // Copyright 2026 vals. All rights reserved.
 // SPDX-License-Identifier: MIT
 #include "oled.h"
@@ -64,12 +65,15 @@ esp_err_t oled_init(gpio_num_t sda, gpio_num_t scl, uint8_t addr) {
         0xDB, 0x40,       /* VCOMH */
         0xA4,             /* follow RAM */
         0xA6,             /* normal (not inverted) */
-        0xAF,             /* display on */
     };
     e = send_cmds(init_seq, sizeof(init_seq));
     if (e != ESP_OK) return e;
+    /* GDDRAM после включения питания содержит случайные данные: сначала чистим, потом включаем экран */
     oled_clear();
-    return oled_flush();
+    e = oled_flush();
+    if (e != ESP_OK) return e;
+    const uint8_t on = 0xAF;               /* display on */
+    return send_cmds(&on, 1);
 }
 
 void oled_clear(void) {
@@ -131,6 +135,3 @@ esp_err_t oled_flush(void) {
     }
     return ESP_OK;
 }
-
- 
- 

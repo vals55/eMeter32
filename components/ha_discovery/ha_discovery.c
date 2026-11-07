@@ -1,3 +1,4 @@
+ 
 // Copyright 2026 vals. All rights reserved.
 // SPDX-License-Identifier: MIT
 #include "ha_discovery.h"
@@ -119,18 +120,18 @@ static bool get_general(const char *id, char *out, size_t n) {
     pzem_data_t p;
     pzem_get_last(&p);
 
-    if (!strcmp(id, i_voltage)) { if (!p.valid) return false; snprintf(out, n, "%.1f", p.voltage); return true; }
-    if (!strcmp(id, i_current)) { if (!p.valid) return false; snprintf(out, n, "%.3f", p.current); return true; }
-    if (!strcmp(id, i_power))   { if (!p.valid) return false; snprintf(out, n, "%.1f", p.power); return true; }
-    if (!strcmp(id, i_freq))    { if (!p.valid) return false; snprintf(out, n, "%.1f", p.frequency); return true; }
-    if (!strcmp(id, i_pf))      { if (!p.valid) return false; snprintf(out, n, "%.2f", p.power_factor); return true; }
+    if (!strcmp(id, i_voltage)) { if (!pzem_data_fresh(&p)) return false; snprintf(out, n, "%.1f", p.voltage); return true; }
+    if (!strcmp(id, i_current)) { if (!pzem_data_fresh(&p)) return false; snprintf(out, n, "%.3f", p.current); return true; }
+    if (!strcmp(id, i_power))   { if (!pzem_data_fresh(&p)) return false; snprintf(out, n, "%.1f", p.power); return true; }
+    if (!strcmp(id, i_freq))    { if (!pzem_data_fresh(&p)) return false; snprintf(out, n, "%.1f", p.frequency); return true; }
+    if (!strcmp(id, i_pf))      { if (!pzem_data_fresh(&p)) return false; snprintf(out, n, "%.2f", p.power_factor); return true; }
     if (!strcmp(id, i_energy))  {   /* показания PZEM с коррекцией energy_offset, 2 знака */
-        if (!p.valid) return false;
+        if (!pzem_data_fresh(&p)) return false;
         snprintf(out, n, "%.2f", (double)p.energy_kwh + (double)c->energy_offset);
         return true;
     }
     if (!strcmp(id, i_time)) {      /* время последнего удачного опроса PZEM, ISO 8601 с поясом */
-        if (!p.valid || !ntp_sync_is_synced()) return false;
+        if (!pzem_data_fresh(&p) || !ntp_sync_is_synced()) return false;
         int64_t age_s = (esp_timer_get_time() / 1000 - p.timestamp_ms) / 1000;
         time_t tt = time(NULL) - (time_t)age_s;
         struct tm tm;
@@ -615,5 +616,3 @@ esp_err_t ha_discovery_start(void) {
     ota_update_set_state_cb(on_ota_state);
     return xTaskCreate(ha_task, "ha", 5120, NULL, 3, NULL) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
 }
- 
- 
