@@ -32,9 +32,7 @@ static const char *TAG = "ha";
    "Set energy E1/E2" - только команда из HA: состояние не публикуется (в HA сущность optimistic).
    Энергия в кВт*ч везде публикуется и вводится с точностью 2 знака после запятой. */
 #define PULSES_KEY       "imp"      /* id i_imp0 без цифры канала */
-#define LEGACY_PULSES_ID "imp0"     /* прежний служебный топик <base>/imp<N>/state: только для миграции */
 
-static bool s_legacy_cleared[CHANNEL_COUNT];
 static bool s_pub_have[CHANNEL_COUNT];
 static uint32_t s_pub_bucket[CHANNEL_COUNT];    /* последняя опубликованная сотая доля кВт*ч */
 
@@ -104,13 +102,6 @@ static void chan_attr_topic(int ch, char *out, size_t n) {
     char tid[40];
     chan_topic_id(CHANNEL_ENTITIES[0][2], ch, tid, sizeof(tid));
     snprintf(out, n, "%s/%s/attributes", mqtt_mgr_base_topic(), tid);
-}
-
-/* то же в прежней иерархии <mqtt_topic>/<hostname>/... (миграция) */
-static void old_attr_topic(int ch, char *out, size_t n) {
-    char tid[40];
-    chan_topic_id(CHANNEL_ENTITIES[0][2], ch, tid, sizeof(tid));
-    snprintf(out, n, "%s/%s/attributes", mqtt_mgr_old_base_topic(), tid);
 }
 
 /* ---------- Значения ---------- */
@@ -213,14 +204,6 @@ static void publish_channel(int ch) {
     if (s.len < s.cap) {
         chan_attr_topic(ch, t, sizeof(t));
         mqtt_mgr_publish(t, buf, 0, true);
-    }
-
-    /* миграция: служебный топик <base>/imp<N>/state больше не нужен, очищаем (один раз за запуск) */
-    if (!s_legacy_cleared[ch]) {
-        s_legacy_cleared[ch] = true;
-        chan_topic_id(LEGACY_PULSES_ID, ch, tid, sizeof(tid));
-        snprintf(t, sizeof(t), "%s/%s/state", mqtt_mgr_base_topic(), tid);
-        mqtt_mgr_publish(t, "", 1, true);
     }
 }
 
@@ -327,40 +310,6 @@ static void publish_discovery(const char *const *e, int ch) {
     mqtt_mgr_publish(topic, buf, 1, true);
 }
 
-/* Удаление того, чего больше нет: пустой retained-payload.
-   Discovery: записи CHANNEL_ENTITIES[1..] (теперь атрибуты), прежние current/power, ip/mac/chip_id (атрибуты RSSI).
-   Состояния: retained <base>/set_energy1|2/state от прежних версий.
-   Прежний статус <mqtt_topic>/<hostname>/status (до перехода на номер чипа). */
-static void remove_obsolete_discovery(void) {
-    static const char *const old_general[] = { "ip", "mac", "chip_id" };
-    static const char *const old_chan[] = { "current", "power" };
-    const settings_t *c = settings_get();
-    char topic[200], tid[40];
-    for (int ch = 0; ch < CHANNEL_COUNT; ch++) {
-        for (size_t j = 1; j < CHANNEL_ENTITY_COUNT; j++) {      /* записи-атрибуты больше не сенсоры */
-            chan_topic_id(CHANNEL_ENTITIES[j][2], ch, tid, sizeof(tid));
-            snprintf(topic, sizeof(topic), "%s/sensor/%s/%s/config", c->mqtt_discovery_topic, c->hostname, tid);
-            mqtt_mgr_publish(topic, "", 1, true);
-        }
-        for (size_t i = 0; i < sizeof(old_chan) / sizeof(old_chan[0]); i++) {
-            snprintf(topic, sizeof(topic), "%s/sensor/%s/%s%d/config", c->mqtt_discovery_topic, c->hostname, old_chan[i], ch);
-            mqtt_mgr_publish(topic, "", 1, true);
-        }
-    }
-    for (size_t i = 0; i < sizeof(old_general) / sizeof(old_general[0]); i++) {
-        snprintf(topic, sizeof(topic), "%s/sensor/%s/%s/config", c->mqtt_discovery_topic, c->hostname, old_general[i]);
-        mqtt_mgr_publish(topic, "", 1, true);
-    }
-    snprintf(topic, sizeof(topic), "%s/%s/state", mqtt_mgr_base_topic(), i_e1);
-    mqtt_mgr_publish(topic, "", 1, true);
-    snprintf(topic, sizeof(topic), "%s/%s/state", mqtt_mgr_base_topic(), i_e2);
-    mqtt_mgr_publish(topic, "", 1, true);
-    if (strcmp(mqtt_mgr_old_base_topic(), mqtt_mgr_base_topic()) != 0) {
-        snprintf(topic, sizeof(topic), "%s/status", mqtt_mgr_old_base_topic());
-        mqtt_mgr_publish(topic, "", 1, true);
-    }
-}
-
 /* ---------- OTA: кнопка запуска сервера обновления и его состояние ---------- */
 
 #define OTA_ID "ota"        /* команда: <base>/ota/set = PRESS; состояние: <base>/ota/state, <base>/ota/attributes */
@@ -439,7 +388,6 @@ static void publish_all_discovery(void) {
     for (size_t i = 0; i < GENERAL_ENTITY_COUNT; i++) publish_discovery(GENERAL_ENTITIES[i], -1);
     for (int ch = 0; ch < CHANNEL_COUNT; ch++) publish_discovery(CHANNEL_ENTITIES[0], ch);   /* только основной сенсор */
     publish_ota_discovery();
-    remove_obsolete_discovery();
 }
 
 /* ---------- Команды из HA ---------- */
@@ -517,20 +465,6 @@ static void restore_pulses(int ch, const char *digits) {
 }
 
 static void on_message(const char *topic, const char *data, int len) {
-    /* миграция: атрибуты в прежней иерархии <mqtt_topic>/<hostname>/... - берём импульсы и очищаем топик */
-    for (int ch = 0; ch < CHANNEL_COUNT; ch++) {
-        char t[256];
-        old_attr_topic(ch, t, sizeof(t));
-        if (strcmp(topic, t) == 0) {
-            const char *p = strstr(data, "\"" PULSES_KEY "\":");
-            if (p) {
-                restore_pulses(ch, p + strlen("\"" PULSES_KEY "\":"));
-                mqtt_mgr_publish(t, "", 1, true);
-            }
-            return;
-        }
-    }
-
     const char *base = mqtt_mgr_base_topic();
     size_t bl = strlen(base);
     if (strncmp(topic, base, bl) != 0 || topic[bl] != '/') return;
@@ -545,13 +479,6 @@ static void on_message(const char *topic, const char *data, int len) {
         if (strcmp(rest, want) == 0) {
             const char *p = strstr(data, "\"" PULSES_KEY "\":");
             if (p) restore_pulses(ch, p + strlen("\"" PULSES_KEY "\":"));
-            return;
-        }
-        /* миграция: служебный топик <base>/imp<N>/state */
-        chan_topic_id(LEGACY_PULSES_ID, ch, tid, sizeof(tid));
-        snprintf(want, sizeof(want), "%s/state", tid);
-        if (strcmp(rest, want) == 0) {
-            restore_pulses(ch, data);
             return;
         }
     }
@@ -575,16 +502,8 @@ static void on_connected(void) {
     snprintf(t, sizeof(t), "%s/+/set", mqtt_mgr_base_topic());
     mqtt_mgr_subscribe(t, 1);
     for (int ch = 0; ch < CHANNEL_COUNT; ch++) {
-        char tid[40];
         chan_attr_topic(ch, t, sizeof(t));
         mqtt_mgr_subscribe(t, 1);
-        chan_topic_id(LEGACY_PULSES_ID, ch, tid, sizeof(tid));
-        snprintf(t, sizeof(t), "%s/%s/state", mqtt_mgr_base_topic(), tid);
-        mqtt_mgr_subscribe(t, 1);
-        if (strcmp(mqtt_mgr_old_base_topic(), mqtt_mgr_base_topic()) != 0) {
-            old_attr_topic(ch, t, sizeof(t));       /* перенос накопленных импульсов из прежней иерархии */
-            mqtt_mgr_subscribe(t, 1);
-        }
     }
     if (settings_get()->mqtt_auto_discovery) publish_all_discovery();
     publish_all_states();   /* каналы без восстановленного значения пропускаются */

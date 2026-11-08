@@ -1,3 +1,4 @@
+ 
 // Copyright 2026 vals. All rights reserved.
 // SPDX-License-Identifier: MIT
 #include "mqtt_mgr.h"
@@ -16,7 +17,6 @@ static esp_mqtt_client_handle_t s_client;
 static volatile bool s_connected;
 static char s_chip[8];
 static char s_base[128];
-static char s_old_base[128];
 static char s_status[160];
 static mqtt_mgr_connected_cb_t s_on_connected;
 static mqtt_mgr_message_cb_t s_on_message;
@@ -53,19 +53,6 @@ const char *mqtt_mgr_base_topic(void) {
         }
     }
     return s_base;
-}
-
-const char *mqtt_mgr_old_base_topic(void) {
-    if (s_old_base[0] == '\0') {
-        char prefix[MQTT_TOPIC_LEN];
-        const char *host = settings_get()->hostname;
-        if (get_prefix(prefix, sizeof(prefix))) {
-            snprintf(s_old_base, sizeof(s_old_base), "%s/%s", prefix, host);
-        } else {
-            snprintf(s_old_base, sizeof(s_old_base), "%s", host);
-        }
-    }
-    return s_old_base;
 }
 
 bool mqtt_mgr_is_connected(void) {
@@ -154,5 +141,3 @@ esp_err_t mqtt_mgr_start(void) {
     ESP_LOGI(TAG, "connecting to %s:%u", c->mqtt_host, (unsigned)c->mqtt_port);
     return ESP_OK;
 }
- 
- 
