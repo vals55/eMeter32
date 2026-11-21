@@ -1,6 +1,7 @@
 // Copyright 2026 vals. All rights reserved.
 // SPDX-License-Identifier: MIT
 #include "esp_log.h"
+#include "esp_system.h"
 #include "board_config.h"
 #include "settings.h"
 #include "wifi_mgr.h"
@@ -36,9 +37,6 @@ static void on_wifi(wifi_mgr_state_t st, void *arg) {
     }
 }
 
-/* Ждать retained-значение с MQTT, затем взять начальные значения из настроек */
-#define PULSE_RESTORE_WAIT_US (60ULL * 1000000ULL)
-
 static void pulses_restore_initial(void *arg) {
     const settings_t *c = settings_get();
     /* для уже восстановленных каналов вернёт ESP_ERR_INVALID_STATE - это нормально */
@@ -63,9 +61,8 @@ static void pulses_start(void) {
         pulses_restore_initial(NULL);          /* MQTT выключен - восстанавливать не откуда */
         return;
     }
-    esp_timer_handle_t tm;
-    const esp_timer_create_args_t ta = { .callback = pulses_restore_initial, .name = "pulse_fb" };
-    if (esp_timer_create(&ta, &tm) == ESP_OK) esp_timer_start_once(tm, PULSE_RESTORE_WAIT_US);
+    /* MQTT включен: счет идет в RAM, base придет с retained-значением. Запасной вариант
+     * (начальные E1/E2 из настроек) включается в ha_discovery только после подключения к брокеру. */
 }
 
 static void on_portal_button(void) {
@@ -73,6 +70,7 @@ static void on_portal_button(void) {
 }
 
 void app_main(void) {
+    ESP_LOGW(TAG, "reset reason: %d", (int)esp_reset_reason());   /* 1=poweron 3=sw 4=panic 5=int_wdt 6=task_wdt 15=brownout */
     ESP_ERROR_CHECK(settings_init());
     ntp_sync_init();      /* часовой пояс из настроек, сеть не нужна */
 
@@ -93,6 +91,7 @@ void app_main(void) {
     ESP_ERROR_CHECK(user_button_start(PIN_PORTAL_BUTTON, PORTAL_BUTTON_HOLD_MS, on_portal_button));
 }
 
+ 
  
  
  

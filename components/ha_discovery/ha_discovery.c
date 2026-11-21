@@ -1,4 +1,3 @@
- 
 // Copyright 2026 vals. All rights reserved.
 // SPDX-License-Identifier: MIT
 #include "ha_discovery.h"
@@ -12,6 +11,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_mac.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "mqtt_mgr.h"
 #include "settings.h"
@@ -154,9 +154,30 @@ static bool get_channel(const char *id, int ch, char *out, size_t n) {
     return false;
 }
 
-/* Атрибуты сенсора RSSI: ip, mac, chip_id */
+/* Причина последнего сброса (esp_reset_reason): нужна, чтобы замечать незаметные перезагрузки */
+static const char *reset_reason_str(void) {
+    static char other[16];
+    esp_reset_reason_t r = esp_reset_reason();
+    switch (r) {
+        case ESP_RST_POWERON:   return "poweron";
+        case ESP_RST_EXT:       return "external";
+        case ESP_RST_SW:        return "software";
+        case ESP_RST_PANIC:     return "panic";
+        case ESP_RST_INT_WDT:   return "int_wdt";
+        case ESP_RST_TASK_WDT:  return "task_wdt";
+        case ESP_RST_WDT:       return "wdt";
+        case ESP_RST_DEEPSLEEP: return "deepsleep";
+        case ESP_RST_BROWNOUT:  return "brownout";
+        case ESP_RST_SDIO:      return "sdio";
+        default:
+            snprintf(other, sizeof(other), "other_%d", (int)r);
+            return other;
+    }
+}
+
+/* Атрибуты сенсора RSSI: ip, mac, chip_id, reset_reason, uptime_s, heap_min */
 static void publish_rssi_attributes(void) {
-    char buf[160], t[256], ip[20], m[20];
+    char buf[320], t[256], ip[20], m[20];
     uint8_t mac[6];
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
     snprintf(m, sizeof(m), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
@@ -166,6 +187,9 @@ static void publish_rssi_attributes(void) {
     if (wifi_mgr_ip(ip, sizeof(ip)) == ESP_OK) sb_kv(&s, i_ip, ip);
     sb_kv(&s, i_mac, m);
     sb_kv(&s, i_chip, mqtt_mgr_chip_id());
+    sb_kv(&s, "reset_reason", reset_reason_str());
+    sb_add(&s, "\"uptime_s\":%lu,", (unsigned long)(esp_timer_get_time() / 1000000LL));
+    sb_add(&s, "\"heap_min\":%lu,", (unsigned long)esp_get_minimum_free_heap_size());
     sb_trim_comma(&s);
     sb_add(&s, "}");
     if (s.len >= s.cap) return;
@@ -497,6 +521,31 @@ static void on_message(const char *topic, const char *data, int len) {
     handle_command(id, data);
 }
 
+/* Запасной вариант: если после подключения к MQTT retained-значение счетчика не пришло
+ * (первый запуск или оно удалено), берем начальные E1/E2 из настроек. Отсчет начинается
+ * именно от подключения к брокеру, а не от старта МК: при недоступной сети счет идет в RAM
+ * и позже складывается с retained-значением, а начальные значения не затирают сохраненные. */
+#define PULSE_RESTORE_WAIT_US (15ULL * 1000000ULL)
+
+static esp_timer_handle_t s_restore_tm;
+
+static void restore_initial_cb(void *arg) {
+    (void)arg;
+    const settings_t *c = settings_get();
+    /* для уже восстановленных каналов вернёт ESP_ERR_INVALID_STATE - это нормально */
+    pulse_counter_restore(PULSE_CH_E1, (uint32_t)((double)c->initial_E1 * c->coeff + 0.5));
+    pulse_counter_restore(PULSE_CH_E2, (uint32_t)((double)c->initial_E2 * c->coeff + 0.5));
+}
+
+static void arm_restore_fallback(void) {
+    if (!s_restore_tm) {
+        const esp_timer_create_args_t ta = { .callback = restore_initial_cb, .name = "pulse_fb" };
+        if (esp_timer_create(&ta, &s_restore_tm) != ESP_OK) return;
+    }
+    esp_timer_stop(s_restore_tm);               /* при повторном подключении отсчет заново */
+    esp_timer_start_once(s_restore_tm, PULSE_RESTORE_WAIT_US);
+}
+
 static void on_connected(void) {
     char t[256];
     snprintf(t, sizeof(t), "%s/+/set", mqtt_mgr_base_topic());
@@ -508,6 +557,7 @@ static void on_connected(void) {
     if (settings_get()->mqtt_auto_discovery) publish_all_discovery();
     publish_all_states();   /* каналы без восстановленного значения пропускаются */
     publish_ota_state();
+    arm_restore_fallback();
 }
 
 /* ---------- Счётчик импульсов и периодическая публикация ---------- */
@@ -535,3 +585,4 @@ esp_err_t ha_discovery_start(void) {
     ota_update_set_state_cb(on_ota_state);
     return xTaskCreate(ha_task, "ha", 5120, NULL, 3, NULL) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
 }
+ 

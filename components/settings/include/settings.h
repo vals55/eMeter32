@@ -8,7 +8,7 @@
 /* Версия формата структуры. Менять при любом изменении settings_t. */
 #define SETTINGS_VERSION 10
 
-#define FIRMWARE_VERSION "0.2"
+#define FIRMWARE_VERSION "0.3"
 #define HARDWARE_VERSION "0.1"
 #define BRAND_NAME "eMeter32"
 /* В имени хоста нельзя использовать точку, поэтому версия прошивки в него не входит */
