@@ -149,6 +149,10 @@ esp_err_t wifi_mgr_start(wifi_mgr_cb_t cb, void *arg) {
     esp_err_t e = esp_wifi_start();
 
     if (e == ESP_OK) {
+        esp_err_t se = esp_wifi_set_ps(WIFI_PS_NONE);
+        if (se != ESP_OK) {
+            ESP_LOGW(TAG, "set_ps failed: %s", esp_err_to_name(se));
+        }        
         esp_err_t pe = esp_wifi_set_max_tx_power(WIFI_TX_POWER_STA);
         if (pe != ESP_OK) {
             ESP_LOGW(TAG, "set_max_tx_power failed: %s", esp_err_to_name(pe));

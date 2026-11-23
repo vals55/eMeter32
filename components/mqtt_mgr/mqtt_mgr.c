@@ -1,4 +1,3 @@
- 
 // Copyright 2026 vals. All rights reserved.
 // SPDX-License-Identifier: MIT
 #include "mqtt_mgr.h"
@@ -7,14 +6,26 @@
 #include "mqtt_client.h"
 #include "esp_log.h"
 #include "esp_mac.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "settings.h"
+#include "wifi_mgr.h"
 
 static const char *TAG = "mqtt";
 
 #define MQTT_RX_MAX 96
 
+/* Сторожевой таск: признак жизни соединения - CONNECTED, PUBACK или входящие данные от брокера.
+   Раз в минуту уходит heartbeat "online" (QoS 1), на него брокер отвечает PUBACK. Если при работающем Wi-Fi
+   брокер молчит дольше MQTT_ALIVE_MAX_MS, клиент останавливается и запускается заново. */
+#define MQTT_WD_PERIOD_MS     10000
+#define MQTT_HEARTBEAT_MS     60000
+#define MQTT_ALIVE_MAX_MS     150000
+
 static esp_mqtt_client_handle_t s_client;
 static volatile bool s_connected;
+static volatile uint32_t s_alive_ms;     /* время последнего признака жизни, мс (переполнение 49 суток не мешает) */
 static char s_chip[8];
 static char s_base[128];
 static char s_status[160];
@@ -69,11 +80,16 @@ int mqtt_mgr_subscribe(const char *topic, int qos) {
     return esp_mqtt_client_subscribe(s_client, topic, qos);
 }
 
+static uint32_t now_ms(void) {
+    return (uint32_t)(esp_timer_get_time() / 1000);
+}
+
 static void event_handler(void *arg, esp_event_base_t base, int32_t id, void *data) {
     esp_mqtt_event_handle_t ev = data;
     switch ((esp_mqtt_event_id_t)id) {
     case MQTT_EVENT_CONNECTED:
         s_connected = true;
+        s_alive_ms = now_ms();
         ESP_LOGI(TAG, "connected, base topic %s", mqtt_mgr_base_topic());
         mqtt_mgr_publish(s_status, "online", 1, true);
         if (s_on_connected) s_on_connected();
@@ -82,7 +98,11 @@ static void event_handler(void *arg, esp_event_base_t base, int32_t id, void *da
         s_connected = false;
         ESP_LOGW(TAG, "disconnected");
         break;
+    case MQTT_EVENT_PUBLISHED:
+        s_alive_ms = now_ms();
+        break;
     case MQTT_EVENT_DATA: {
+        s_alive_ms = now_ms();
         /* принимаем только короткие неразбитые сообщения */
         if (ev->current_data_offset != 0 || ev->data_len != ev->total_data_len) break;
         char topic[192];
@@ -100,6 +120,29 @@ static void event_handler(void *arg, esp_event_base_t base, int32_t id, void *da
         break;
     default:
         break;
+    }
+}
+
+static void watchdog_task(void *arg) {
+    uint32_t last_hb = now_ms();
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(MQTT_WD_PERIOD_MS));
+        uint32_t now = now_ms();
+        if (!wifi_mgr_is_connected()) {
+            s_alive_ms = now;       /* без Wi-Fi брокера не ждём: отсчёт начнётся после возвращения сети */
+            continue;
+        }
+        if (s_connected && now - last_hb >= MQTT_HEARTBEAT_MS) {
+            last_hb = now;
+            mqtt_mgr_publish(s_status, "online", 1, true);
+        }
+        uint32_t age = now - s_alive_ms;
+        if (age < MQTT_ALIVE_MAX_MS) continue;
+        ESP_LOGW(TAG, "no broker activity for %lu s, restarting client", (unsigned long)(age / 1000));
+        s_alive_ms = now;
+        s_connected = false;
+        esp_mqtt_client_stop(s_client);
+        esp_mqtt_client_start(s_client);
     }
 }
 
@@ -137,6 +180,10 @@ esp_err_t mqtt_mgr_start(void) {
         esp_mqtt_client_destroy(s_client);
         s_client = NULL;
         return e;
+    }
+    s_alive_ms = now_ms();
+    if (xTaskCreate(watchdog_task, "mqtt_wd", 3072, NULL, 3, NULL) != pdPASS) {
+        ESP_LOGW(TAG, "watchdog task create failed");
     }
     ESP_LOGI(TAG, "connecting to %s:%u", c->mqtt_host, (unsigned)c->mqtt_port);
     return ESP_OK;

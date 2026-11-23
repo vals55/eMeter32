@@ -1,4 +1,3 @@
- 
 // Copyright 2026 vals. All rights reserved.
 // SPDX-License-Identifier: MIT
 #pragma once
@@ -7,7 +6,8 @@
 
 /* Тонкая обёртка над esp-mqtt. Пустой mqtt_host в настройках = MQTT выключен.
    Иерархия топиков: <mqtt_topic>/<номер чипа>/..., где номер чипа - последние 2 байта MAC (4 hex-символа, как сенсор chip_id).
-   Статус (LWT): <base>/status = online/offline */
+   Статус (LWT): <base>/status = online/offline; раз в минуту подтверждается heartbeat-ом "online".
+   Если брокер молчит дольше 150 с при работающем Wi-Fi, клиент перезапускается (защита от зависания соединения). */
 
 typedef void (*mqtt_mgr_connected_cb_t)(void);
 /* topic и data - копии с завершающим нулём, живут только во время вызова */
