@@ -12,6 +12,16 @@
 
 static const char *TAG = "wifi_mgr";
 
+/* Точки слабее этого уровня (дБм) при выборе не рассматриваются; при недоступности сильной точки
+   устройство повторяет попытки, а не уходит на слабый репитер. Можно переопределить в wifi_mgr.h */
+#ifndef WIFI_MIN_RSSI
+#define WIFI_MIN_RSSI        -65
+#endif
+/* Сколько раз пробовать подключиться к лучшей точке, прежде чем перейти к следующей в списке */
+#ifndef WIFI_CONNECT_RETRIES
+#define WIFI_CONNECT_RETRIES 3
+#endif
+
 static wifi_mgr_cb_t s_cb;
 static void *s_cb_arg;
 static volatile wifi_mgr_state_t s_state = WIFI_MGR_CONNECTING;
@@ -133,6 +143,8 @@ esp_err_t wifi_mgr_start(wifi_mgr_cb_t cb, void *arg) {
     /* Искать на всех каналах и выбирать самую сильную точку с этим SSID */
     wc.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
     wc.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
+    wc.sta.threshold.rssi = WIFI_MIN_RSSI;                /* слабые точки и репитеры отсекаются */
+    wc.sta.failure_retry_cnt = WIFI_CONNECT_RETRIES;      /* несколько попыток до отката на следующую точку */
 
     if (cfg->wifi_bssid_set) {
         ESP_LOGI(TAG, "connect: ssid='%s' pass_len=%d bssid=%02X:%02X:%02X:%02X:%02X:%02X",
@@ -144,6 +156,8 @@ esp_err_t wifi_mgr_start(wifi_mgr_cb_t cb, void *arg) {
                  cfg->wifi_ssid, (int)strlen(cfg->wifi_pass));
     }
 
+    ESP_LOGI(TAG, "min rssi %d dBm, retries per AP %d", (int)WIFI_MIN_RSSI, (int)WIFI_CONNECT_RETRIES);
+
     /* Режим STA уже задан выше, после esp_wifi_init() */
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wc));
     esp_err_t e = esp_wifi_start();
@@ -152,7 +166,7 @@ esp_err_t wifi_mgr_start(wifi_mgr_cb_t cb, void *arg) {
         esp_err_t se = esp_wifi_set_ps(WIFI_PS_NONE);
         if (se != ESP_OK) {
             ESP_LOGW(TAG, "set_ps failed: %s", esp_err_to_name(se));
-        }        
+        }
         esp_err_t pe = esp_wifi_set_max_tx_power(WIFI_TX_POWER_STA);
         if (pe != ESP_OK) {
             ESP_LOGW(TAG, "set_max_tx_power failed: %s", esp_err_to_name(pe));
@@ -191,6 +205,3 @@ void wifi_mgr_suspend(void) {
     esp_wifi_disconnect();
     set_state(WIFI_MGR_AP_REQUIRED);  /* вызовет captive_portal_start() через callback в main */
 }
-
- 
- 
