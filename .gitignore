@@ -25,6 +25,7 @@ desktop.ini
 *.bat
 *.zip
 *.txt
+!CMakeLists.txt
 
 # Local secrets (never commit Wi-Fi or MQTT credentials)
 *.secret
